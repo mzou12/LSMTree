@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.12)
 project(templatedb VERSION 0.1.0)
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 
 set(templatedb_lib
     src/templatedb/db.cpp
@@ -14,6 +14,7 @@ set(bloomfilter_lib
 
 add_library(${PROJECT_NAME} ${templatedb_lib})
 target_include_directories(${PROJECT_NAME} PUBLIC ${PROJECT_SOURCE_DIR}/src)
+target_link_libraries(${PROJECT_NAME} PUBLIC BF)
 
 add_library(BF ${bloomfilter_lib})
 target_include_directories(BF PUBLIC ${PROJECT_SOURCE_DIR}/src)
