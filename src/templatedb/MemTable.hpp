@@ -26,6 +26,7 @@ public:
 
     void sort_entries();
     void sort_tombs();
+    void clear();
 
 private:
     std::vector<Entry> entries;

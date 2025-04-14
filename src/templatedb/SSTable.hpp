@@ -1,3 +1,4 @@
+#pragma once
 #include <string>
 #include <vector>
 #include <list>
@@ -30,12 +31,12 @@ struct Fragment
 class SSTable
 {
 public:
-    uint64_t size = 0;
-    uint64_t seq_start = 0;
-    int min = 0, max;
-    std::string path;
     // BF::BloomFilter *bloomFilter;
     SSTable();
+    SSTable(const std::vector<Entry>& entries,
+        const std::vector<RangeTomb>& tombs,
+        int min, int max,
+        uint64_t size, uint64_t seq_start);
     SSTable(const std::string& filePath);
     bool save(const std::string& filePath);
 
@@ -51,10 +52,18 @@ public:
 
     void sort_entries();
     void sort_tombs();
+    uint64_t get_seq_start();
+    uint64_t get_size();
+    int get_min();
+    int get_max();
 
 private:
     std::vector<Entry> entries;
     std::vector<RangeTomb> tombs;
     std::vector<Fragment> fragments;
     bool is_range_delete = false;
+    uint64_t size = 0;
+    uint64_t seq_start = 0;
+    int min = 0, max;
+    std::string path;
 };
