@@ -9,9 +9,10 @@
 #include <unordered_map>
 #include <vector>
 
-#include "templatedb/operation.hpp"
-#include "templatedb/SSTable.hpp"
-#include "templatedb/MemTable.hpp"
+#include "operation.hpp"
+#include "SSTable.hpp"
+#include "MemTable.hpp"
+#include "struct.hpp"
 
 namespace templatedb
 {
@@ -23,30 +24,12 @@ typedef enum _status_code
     ERROR_OPEN = 100,
 } db_status;
 
-
-class Value
-{
-public:
-    std::vector<int> items;
-    bool visible = true;
-
-    Value() {}
-    Value(bool _visible) {visible = _visible;}
-    Value(std::vector<int> _items) { items = _items;}
-
-    bool operator ==(Value const & other) const
-    {
-        return (visible == other.visible) && (items == other.items);
-    }
-};
-
-
 class DB
 {
 public:
     db_status status;
 
-    DB() {};
+    DB();
     ~DB() {close();};
 
     Value get(int key);
@@ -65,6 +48,10 @@ public:
 
     std::vector<Value> execute_op(Operation op);
 
+    void set_flush(int num);
+    void set_level_size(int num);
+    void set_level_size_multi(int num);
+
 private:
     std::fstream file;
     std::unordered_map<int, Value> table;
@@ -81,9 +68,9 @@ private:
     uint64_t seq = 0;
     std::vector<std::vector<int>> sstables_file; // sstable file name
     std::vector<int> levels_size; //each level's current size
-    const int flush_base = 10;
-    const int level_size_base = 20; // Basic level size
-    const int level_size_multi = 4;
+    int flush_base = 10;
+    int level_size_base = 20; // Basic level size
+    int level_size_multi = 4;
     const std::string basic_path = "SSTables/SSTable_";
 };
 

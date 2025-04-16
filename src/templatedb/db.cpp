@@ -1,22 +1,31 @@
-#include "templatedb/db.hpp"
+#include "db.hpp"
 #include <cmath>
 #include <set>
 #include <algorithm>
 #include <unordered_set>
-#include "db.hpp"
+#include <queue>
 
 using namespace templatedb;
 
+templatedb::DB::DB()
+{
+    sstables_file.push_back({});
+    levels_size.push_back(0);
+}
 
 Value DB::get(int key)
 {
     if (mmt.get(key).has_value()){
+        std::cout<< "mmt has value"<<"\n";
         return mmt.get(key).value();
     }
-    for (int i = 0; i < max_level; i++){
+    for (int i = 0; i <= max_level; i++){
+        if (sstables_file.at(i).size() == 0){
+            continue;
+        }
         for (int j = sstables_file.at(i).size()-1; j>=0; j--){
-            std::string path = basic_path + std::to_string(i) + "_" + std::to_string(j) + ".data";
-            std::optional<templatedb::Value> check = SSTable(path).get(key);
+            std::string path = path_control(i, j);
+            std::optional<Value> check = SSTable(path).get(key);
             if (check.has_value()){
                 return check.value();
             }
@@ -99,102 +108,165 @@ static bool is_key_covered_by_fragment(const std::vector<Fragment>& fragments, i
 
 
 std::vector<Value> DB::scan() {
-
     std::vector<Value> result;
-    std::vector<Entry> entries;
+    std::unordered_set<int> seen_keys;
+
+    // === 1. 收集所有 RangeTombstone，构造 fragments ===
     std::vector<RangeTomb> tombs;
-    std::vector<Fragment> fragments;
 
-    for (const auto& e: mmt.getEntries()){
-        entries.push_back(e);
+    mmt.reset_range_iterator();
+    while (mmt.range_tombs_has_next())
+        tombs.push_back(mmt.range_tombs_next().value());
+
+    std::vector<SSTable> sstables;
+    for (int i = 0; i <= max_level; ++i) {
+        for (int j = sstables_file[i].size() - 1; j >= 0; --j) {
+            std::string path = path_control(i, j);
+            sstables.emplace_back(path);
+            sstables.back().reset_range_iterator();
+            while (sstables.back().range_tombs_has_next())
+                tombs.push_back(sstables.back().range_tombs_next().value());
+        }
     }
 
-    for (const auto& e: mmt.getRangeTomb()){
-        tombs.push_back(e);
+    std::vector<Fragment> fragments = build_fragments(tombs);
+
+    // === 2. 构造 iterator heap：按 key 升序，同 key 只输出第一个 ===
+    struct Item {
+        Entry entry;
+        int source; // 0 = MemTable, 1~n = SSTable[i-1]
+    };
+
+    auto cmp = [](const Item& a, const Item& b) {
+        return a.entry.key > b.entry.key; // min-heap
+    };
+
+    std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
+
+    mmt.reset_iterator();
+    std::vector<bool> is_mmt = {true};
+    if (mmt.has_next())
+        pq.push({mmt.next().value(), 0});
+
+    for (int i = 0; i < sstables.size(); ++i) {
+        sstables[i].reset_iterator();
+        is_mmt.push_back(false);
+        if (sstables[i].has_next())
+            pq.push({sstables[i].next().value(), i + 1});
     }
 
-    for (int i = 0; i < max_level; i++){
-        for (int j = sstables_file.at(i).size()-1; j>=0; j--){
-            std::string path = basic_path + std::to_string(i) + "_" + std::to_string(j) + ".data";
-            SSTable sst(path);
-            for (const auto& e: sst.getEntries()){
-                entries.push_back(e);
+    // === 3. Heap merge with dedup & filter ===
+    while (!pq.empty()) {
+        Item item = pq.top(); pq.pop();
+        Entry& e = item.entry;
+        int src = item.source;
+
+        if (seen_keys.count(e.key)) {
+            // skip remaining versions of the same key
+        } else {
+            seen_keys.insert(e.key);
+
+            if (!e.tomb && !is_key_covered_by_fragment(fragments, e.key, e.seq)) {
+                result.push_back(e.val);
             }
-            for (const auto& e: sst.getRangeTomb()){
-                tombs.push_back(e);
-            } 
         }
-    }
-    std::sort(entries.begin(), entries.end(), entry_cmp);
-    std::sort(tombs.begin(), tombs.end(), tomb_cmp);
 
-    fragments = build_fragments(tombs);
-    std::unordered_set<int> seen;
-    for (auto& e : entries){
-        if (seen.count(e.key)) { // only use newest one
-            continue;
-        } 
-        seen.insert(e.key);
-        if (e.tomb){
-            continue;
-        }
-        if (!is_key_covered_by_fragment(fragments, e.key, e.seq)){
-            result.push_back(e.val);
+        // Push next
+        if (is_mmt[src]) {
+            if (mmt.has_next())
+                pq.push({mmt.next().value(), src});
+        } else {
+            if (sstables[src - 1].has_next())
+                pq.push({sstables[src - 1].next().value(), src});
         }
     }
+
     return result;
 }
+
+
+
 
 std::vector<Value> DB::scan(int min_key, int max_key) {
-
     std::vector<Value> result;
-    std::vector<Entry> entries;
+    std::unordered_set<int> seen_keys;
     std::vector<RangeTomb> tombs;
-    std::vector<Fragment> fragments;
 
-    for (const auto& e: mmt.getEntries()){
-        if (e.key <= max_key && e.key >= min_key){
-            entries.push_back(e);
+    // === 收集所有 range tombstones，构造 fragments ===
+    mmt.reset_range_iterator();
+    while (mmt.range_tombs_has_next())
+        tombs.push_back(mmt.range_tombs_next().value());
+
+    std::vector<SSTable> sstables;
+    for (int i = 0; i <= max_level; ++i) {
+        for (int j = sstables_file[i].size() - 1; j >= 0; --j) {
+            std::string path = path_control(i, j);
+            sstables.emplace_back(path);
+            sstables.back().reset_range_iterator();
+            while (sstables.back().range_tombs_has_next())
+                tombs.push_back(sstables.back().range_tombs_next().value());
         }
     }
 
-    for (const auto& e: mmt.getRangeTomb()){
-        tombs.push_back(e);
+    std::vector<Fragment> fragments = build_fragments(tombs);
+
+    // === 构建 iterator 优先队列 ===
+    struct Item {
+        Entry entry;
+        int source_id; // 0 = MemTable, 1~n = SSTable[i-1]
+    };
+
+    auto cmp = [](const Item& a, const Item& b) {
+        return a.entry.key > b.entry.key; // min-heap
+    };
+    std::priority_queue<Item, std::vector<Item>, decltype(cmp)> pq(cmp);
+
+    mmt.reset_iterator();
+    std::vector<bool> is_mmt = {true};
+    if (mmt.has_next())
+        pq.push({mmt.next().value(), 0});
+
+    for (int i = 0; i < sstables.size(); ++i) {
+        sstables[i].reset_iterator();
+        is_mmt.push_back(false);
+        if (sstables[i].has_next())
+            pq.push({sstables[i].next().value(), i + 1});
     }
 
-    for (int i = 0; i < max_level; i++){
-        for (int j = sstables_file.at(i).size()-1; j>=0; j--){
-            std::string path = basic_path + std::to_string(i) + "_" + std::to_string(j) + ".data";
-            SSTable sst(path);
-            for (const auto& e: sst.getEntries()){
-                if (e.key <= max_key && e.key >= min_key){
-                    entries.push_back(e);
-                }
+    // === 扫描合并，并筛选 min_key ~ max_key 范围内有效值 ===
+    while (!pq.empty()) {
+        Item item = pq.top(); pq.pop();
+        Entry& e = item.entry;
+        int src = item.source_id;
+
+        // 超出 scan 范围（右边界）
+        if (e.key >= max_key)
+            break;
+
+        // 左边界外，不用考虑重复 key，直接跳过
+        if (e.key < min_key) {
+            // 不记录 seen，防止 e.key 在 min_key 之后还有新版本
+        } else if (!seen_keys.count(e.key)) {
+            seen_keys.insert(e.key);
+
+            if (!e.tomb && !is_key_covered_by_fragment(fragments, e.key, e.seq)) {
+                result.push_back(e.val);
             }
-            for (const auto& e: sst.getRangeTomb()){
-                tombs.push_back(e);
-            } 
         }
-    }
-    std::sort(entries.begin(), entries.end(), entry_cmp);
-    std::sort(tombs.begin(), tombs.end(), tomb_cmp);
 
-    fragments = build_fragments(tombs);
-    std::unordered_set<int> seen;
-    for (auto& e : entries){
-        if (seen.count(e.key)) { // only use newest one
-            continue;
-        } 
-        seen.insert(e.key);
-        if (e.tomb){
-            continue;
-        }
-        if (!is_key_covered_by_fragment(fragments, e.key, e.seq)){
-            result.push_back(e.val);
+        // 推进对应的 iterator
+        if (is_mmt[src]) {
+            if (mmt.has_next())
+                pq.push({mmt.next().value(), src});
+        } else {
+            if (sstables[src - 1].has_next())
+                pq.push({sstables[src - 1].next().value(), src});
         }
     }
+
     return result;
 }
+
 
 
 
@@ -207,7 +279,7 @@ void DB::del(int key)
     flush_check();
 }
 
-
+// delte from [min,max), notice not [4,6]!!!!
 void DB::del(int min_key, int max_key)
 {
     mmt.range_delete(min_key, max_key, seq);
@@ -372,7 +444,7 @@ void templatedb::DB::flush()
     int sst_num = sstables_file.at(0).size();
     std::string path = path_control(0, sst_num);
     sstables_file.at(0).push_back(sst_num); // Add file's num
-    mmt.save(path);
+    mmt.flush(path);
     levels_size.at(0) += flush_base;
     if (levels_size.at(0) >= level_size_base){
         compact(0);
@@ -402,42 +474,58 @@ void templatedb::DB::compact(int level) {
     SSTable sst(file_path);
     uint64_t new_seq_start = sst.get_seq_start();
     int min = sst.get_min(), max = sst.get_max();
+    // std::cout << "file path" << file_path<<"\n";
     for (const auto& e: sst.getEntries()){
+        // std::cout << "insert " << e.key << "\n";
         entries.push_back(e);
     }
     for (const auto& e: sst.getRangeTomb()){
+        // std::cout << "inser range tombs"<< e.seq <<"\n";
         tombs.push_back(e);
     } 
 
     for (int i = sstables_file.at(level).size() - 2; i >= 0; i--){
         std::string path = path_control(level, sstables_file.at(level).at(i));
+        // std::cout << "file path" << path<<"\n";
         SSTable new_sst(path);
         min = std::min(new_sst.get_min(), min);
         max = std::max(new_sst.get_max(), max);
         for (const auto& e: new_sst.getEntries()){
+            // std::cout << "insert " << e.key << "\n";
             entries.push_back(e);
         }
         for (const auto& e: new_sst.getRangeTomb()){
+            // std::cout << "inser range tombs"<< e.seq <<"\n";
             tombs.push_back(e);
         } 
     }
+    // std::cout << "tomb size"<< tombs.size()<< "\n";
+    // std::cout << "entries size"<< tombs.size()<< "\n";
+    // std::cout << "sstables_file size"<< sstables_file.size()<< "\n";
+    // std::cout << "sstables_file size"<< sstables_file.at(level).size()<< "\n";
+    // std::cout << "sstables_file 0 0:"<< sstables_file.at(level).at(0)<< "\n";
+    // std::cout << "sstables_file 0 1:"<< sstables_file.at(level).at(1)<< "\n";
     std::sort(entries.begin(), entries.end(), entry_cmp);
     std::sort(tombs.begin(), tombs.end(), tomb_cmp);
-    SSTable save_sst(entries, tombs, min, max, levels_size.at(level), new_seq_start);
+    MemTable svae_mmt(entries, tombs, min, max, levels_size.at(level), new_seq_start);
 
+    for (int file_num : sstables_file.at(level)) {
+        std::string old_path = path_control(level, file_num);
+        std::remove(old_path.c_str());
+    }
     levels_size.at(level) = 0;
     sstables_file.at(level).clear();
     int new_level = level + 1;
-    if (new_level < max_level){
+    if (new_level <= max_level){
         levels_size.at(new_level) += this_level_size;
-        save_sst.save(path_control(new_level, sstables_file.at(new_level).size()));
+        svae_mmt.save(path_control(new_level, sstables_file.at(new_level).size()));
         sstables_file.at(new_level).push_back(sstables_file.at(new_level).size());
         if (levels_size.at(new_level) >= level_size_base * level_size_multi * new_level){
             compact(new_level);
         }
     } else {
         levels_size.push_back(this_level_size);
-        save_sst.save(path_control(new_level, 0));
+        svae_mmt.save(path_control(new_level, 0));
         sstables_file.push_back(std::vector{0});
         max_level += 1;
     }
@@ -446,4 +534,16 @@ void templatedb::DB::compact(int level) {
 std::string templatedb::DB::path_control(int level, int num)
 {
     return basic_path + std::to_string(level) + "_" + std::to_string(num) + ".data";
+}
+
+void templatedb::DB::set_flush(int num){
+    flush_base = num;
+}
+
+void templatedb::DB::set_level_size(int num){
+    level_size_base = num;
+}
+
+void templatedb::DB::set_level_size_multi(int num){
+    level_size_multi = num;
 }

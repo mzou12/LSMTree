@@ -1,5 +1,8 @@
 #include "MemTable.hpp"
 #include <algorithm>
+#include <unordered_set>
+#include <iomanip>
+#include <sstream>
 
 MemTable::MemTable()
 {
@@ -8,39 +11,91 @@ MemTable::MemTable()
     max = INT32_MIN;
 }
 
-bool MemTable::save(const std::string &filePath)
+MemTable::MemTable(const std::vector<templatedb::Entry> &new_entries, const std::vector<templatedb::RangeTomb> &new_tombs, 
+    int new_min, int new_max, uint64_t new_size, uint64_t new_seq_start)
+{
+    entries = new_entries;
+    tombs = new_tombs;
+    min = new_min;
+    max = new_max;
+    size = new_size;
+    seq_start = new_seq_start;
+
+}
+
+bool MemTable::flush(const std::string &filePath)
 {
     sort_entries();
     sort_tombs();
-    std::ofstream file(filePath);
+    return save(filePath);
+}
+
+bool MemTable::save(const std::string &filePath)
+{
+    std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) return false;
 
+    // Step 1: 写 header 占位（offset 行只写换行）
     file << size << "\n";
     file << tombs.size() << "\n";
     file << min << "\n";
     file << max << "\n";
     file << seq_start << "\n";
 
+    std::streampos offset_pos = file.tellp();
+
+    // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
+    for (int i = 0; i < 3; ++i) {
+        file << "          \n";  // 10 spaces + \n
+    }
+
+    // Step 2: entries
+    std::vector<std::pair<int, std::streampos>> key_offsets;
+    std::unordered_set<int> seen;
+    std::streampos entry_offset = file.tellp();
+
     for (const auto& e : entries) {
-        file << e.seq << " " << (e.tomb ? 1 : 0) << " " << e.key;
-        for (int v : e.val.items) {
-            file << " " << v;
+        std::streampos pos = file.tellp();
+        if (!seen.count(e.key)) {
+            key_offsets.push_back({e.key, pos});
+            seen.insert(e.key);
         }
+        file << e.seq << " " << (e.tomb ? 1 : 0) << " " << e.key;
+        for (int v : e.val.items) file << " " << v;
         file << "\n";
     }
 
+    // Step 3: tombstones
+    std::streampos tomb_offset = file.tellp();
     for (const auto& t : tombs) {
         file << t.seq << " " << t.start << " " << t.end << "\n";
     }
+
+    // Step 4: key-offset table
+    std::streampos key_index_offset = file.tellp();
+    for (const auto& [key, pos] : key_offsets) {
+        file << key << " " << static_cast<uint64_t>(pos) << "\n";
+    }
+
+    // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
+    file.seekp(offset_pos);
+    file << std::setw(10) << std::left << entry_offset << "\n"
+         << std::setw(10) << std::left << tomb_offset << "\n"
+         << std::setw(10) << std::left << key_index_offset << "\n";
+
+    file.close();
     return true;
 }
 
+
 std::optional<templatedb::Value> MemTable::get(int key)
 {
+    std::cout << "start test "<< key <<"\n";
     if (key > max || key < min){
+        std::cout<<"out of bound "<< key <<"\n";
         return std::nullopt;
     }
-    Entry* best = nullptr;
+    templatedb::Entry* best = nullptr;
     for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry){
         if (entry->key == key) {
             if (!best || entry->seq > best->seq) {
@@ -48,22 +103,27 @@ std::optional<templatedb::Value> MemTable::get(int key)
             }
         }
     }
-    if (!best) return std::nullopt;
-    if (best->tomb) return templatedb::Value(false);
     for (const auto& t : tombs) {
-        if (key >= t.start && key < t.end && t.seq > best->seq) {
-            return templatedb::Value(false); 
+        if (key >= t.start && key < t.end) {
+            if (!best){
+                return templatedb::Value(false); 
+            } else if (t.seq > best->seq){
+                return templatedb::Value(false); 
+            }
         }
     }
+    if (!best) return std::nullopt;
+    if (best->tomb) return templatedb::Value(false);
     return best->val;
 }
 
 void MemTable::add(int key, const templatedb::Value &val, uint64_t seq)
 {
     size++;
-    entries.push_back(Entry{false, seq, key, val});
+    entries.push_back(templatedb::Entry{false, seq, key, val});
     if (seq_start == -1)
         seq_start = seq;
+    sorted = false;
     min = std::min(min, key);
     max = std::max(max, key);
 }
@@ -71,9 +131,10 @@ void MemTable::add(int key, const templatedb::Value &val, uint64_t seq)
 void MemTable::point_delete(int key, uint64_t seq)
 {
     size++;
-    entries.push_back(Entry{true, seq, key, templatedb::Value(false)});
+    entries.push_back(templatedb::Entry{true, seq, key, templatedb::Value(false)});
     if (seq_start == -1)
         seq_start = seq;
+    sorted = false;
     min = std::min(min, key);
     max = std::max(max, key);
 }
@@ -81,9 +142,10 @@ void MemTable::point_delete(int key, uint64_t seq)
 void MemTable::range_delete(int range_min, int range_max, uint64_t seq)
 {
     size++;
-    tombs.push_back(RangeTomb{range_min, range_max, seq});
+    tombs.push_back(templatedb::RangeTomb{range_min, range_max, seq});
     if (seq_start == -1)
         seq_start = seq;
+    range_sorted = false;
     min = std::min(min, range_min);
     max = std::max(max, range_max);
 }
@@ -93,7 +155,7 @@ bool MemTable::hasRangeDelete()
     return !tombs.empty();
 }
 
-static bool entry_cmp(const Entry& a, const Entry& b) {
+static bool entry_cmp(const templatedb::Entry& a, const templatedb::Entry& b) {
     if (a.key != b.key) return a.key < b.key;          // key 升序
     return a.seq > b.seq;                              // seq 降序（新版本在前）
 }
@@ -103,7 +165,7 @@ void MemTable::sort_entries() {
 }
 
 
-static bool tomb_cmp(const RangeTomb& a, const RangeTomb& b) {
+static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
     if (a.start != b.start) return a.start < b.start; // start 升序
     return a.seq > b.seq; // 相同 start 的，先处理更新的 tombstone
 }
@@ -120,5 +182,48 @@ void MemTable::clear(){
     seq_start = -1;
     entries.clear();
     tombs.clear();
+    sorted_entries.clear();
+    sorted_tombs.clear();
+    iter_index = 0;
+    range_iter_index = 0;
+    sorted = false;
+    range_sorted = false;
+}
 
+std::optional<templatedb::Entry> MemTable::next(){
+    if (!has_next()){
+        return std::nullopt;
+    }
+    return sorted_entries[iter_index++];
+}
+
+bool MemTable::has_next(){
+    return iter_index < sorted_entries.size();
+}
+
+void MemTable::reset_iterator(){
+    iter_index = 0;
+    if (!sorted){
+        sorted_entries = entries;
+        std::sort(sorted_entries.begin(), sorted_entries.end(), entry_cmp);
+        sorted = true;
+    }
+}
+
+std::optional<templatedb::RangeTomb> MemTable::range_tombs_next(){
+    if (!range_tombs_has_next()) return std::nullopt;
+    return sorted_tombs[range_iter_index++];
+}
+
+bool MemTable::range_tombs_has_next(){
+    return range_iter_index < (tombs.size());
+}
+
+void MemTable::reset_range_iterator(){
+    range_iter_index = 0;
+    if (!range_sorted){
+        sorted_tombs = tombs;
+        std::sort(sorted_tombs.begin(), sorted_tombs.end(), tomb_cmp);
+        range_sorted = true;
+    }
 }
