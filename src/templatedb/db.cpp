@@ -16,7 +16,6 @@ templatedb::DB::DB()
 Value DB::get(int key)
 {
     if (mmt.get(key).has_value()){
-        std::cout<< "mmt has value"<<"\n";
         return mmt.get(key).value();
     }
     for (int i = 0; i <= max_level; i++){

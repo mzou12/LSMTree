@@ -134,8 +134,6 @@ void SSTable::load_tombs() {
     }
 }
 
-
-
 std::optional<templatedb::Value> SSTable::get(int key)
 {
     if (key > max || key < min){
@@ -157,43 +155,27 @@ std::optional<templatedb::Value> SSTable::get(int key)
         }
     }
 
-    if (found_idx == -1) {
-        return std::nullopt; // 没有这个 key
-    }
-
     if (is_range_delete && fragments.empty()){
         load_tombs();
         fragments = build_fragments(tombs);
     }
-
-    if(!infile.is_open()){
-        infile.open(path);
-    }
-    infile.clear();
-    infile.seekg(key_offsets[found_idx].second);
-    std::string line;
-
-    while (std::getline(infile, line)) {
-
-        std::istringstream ss(line);
-        uint64_t seq;
-        int tomb_flag, key_read;
-        ss >> seq >> tomb_flag >> key_read;
-
-        if (key_read != key) break;
-
-        std::vector<int> items;
-        int x;
-        while (ss >> x) {
-            items.push_back(x);
+    if (found_idx != -1){
+        if(!infile.is_open()){
+            infile.open(path);
         }
+        infile.clear();
+        infile.seekg(key_offsets[found_idx].second);
+        std::string line;
+        while (std::getline(infile, line)) {
+            templatedb::Entry e = parse_line(line);
+            if (e.key != key) break;
 
-        if (tomb_flag) 
-            return templatedb::Value(false);
-        if (is_key_covered_by_fragment(key, seq)) 
-            return templatedb::Value(false);
-
-        return templatedb::Value(items);
+            if (is_range_delete && is_key_covered_by_fragment(key, e.seq)) return templatedb::Value(false);
+            return e.val;
+        }
+    }
+    if (is_range_delete&&is_key_covered_by_fragment(key, 0)){
+        return templatedb::Value(false);
     }
 
     return std::nullopt;

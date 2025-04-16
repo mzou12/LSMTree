@@ -90,9 +90,7 @@ bool MemTable::save(const std::string &filePath)
 
 std::optional<templatedb::Value> MemTable::get(int key)
 {
-    std::cout << "start test "<< key <<"\n";
     if (key > max || key < min){
-        std::cout<<"out of bound "<< key <<"\n";
         return std::nullopt;
     }
     templatedb::Entry* best = nullptr;
