@@ -72,6 +72,7 @@ private:
     int level_size_base = 20; // Basic level size
     int level_size_multi = 4;
     const std::string basic_path = "SSTables/SSTable_";
+    void normalize_filenames(int level);
 };
 
 }   // namespace templatedb
