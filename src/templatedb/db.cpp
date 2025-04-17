@@ -656,7 +656,7 @@ void templatedb::DB::compact(int level) {
 
     normalize_filenames(level);
     normalize_filenames(level + 1);
-    if (levels_size[level + 1] >= level_size_base * level_size_multi * (level+1)){
+    if (levels_size[level + 1] >= level_size_base * pow(level_size_multi, level + 1)){
         // std::cout << "Start recursion"<<"\n";
         
         compact(level + 1);
