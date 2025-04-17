@@ -466,32 +466,6 @@ bool templatedb::DB::flush_check()
 void templatedb::DB::normalize_filenames(int level){
     if (level >= sstables_file.size() || sstables_file[level].empty()) 
         return;
-    // std::vector<std::pair<int, std::string>> files;
-    // for (int file_id : sstables_file[level]) {
-    //     files.push_back({file_id, path_control(level, file_id)});
-    // }
-    // std::sort(files.begin(), files.end());
-    // std::vector<std::pair<std::string, std::string>> rename_list;
-    // for (int new_id = 0; new_id < files.size(); ++new_id) {
-    //     const auto& [old_id, old_path] = files[new_id];
-    //     std::string new_path = path_control(level, new_id);
-    //     if (old_path != new_path) {
-    //         rename_list.push_back({old_path, new_path});
-    //     }
-    // }
-
-    // //rename
-    // for (int i = rename_list.size() - 1; i >= 0; --i) {
-    //     const auto& [old_path, new_path] = rename_list[i];
-    //     // std::cout <<"old path" << old_path<< " | new path: "<< new_path<<"\n";
-    //     std::rename(old_path.c_str(), new_path.c_str());
-    // }
-    // // update files id in the sstables_file
-    // sstables_file[level].clear();
-    // for (int i = 0; i < files.size(); ++i) {
-    //     sstables_file[level].push_back(i);
-    // }
-
 
     for (int i = 0; i < sstables_file[level].size(); ++i){
         if(sstables_file[level].at(i) != i){
@@ -509,7 +483,7 @@ void templatedb::DB::compact(int level) {
 
     // choose oldest one in this level become cs(compacted sstable)
     int oldest_level_num = sstables_file.at(level).at(0);
-    std::cout<<"Level: "<< level <<"\n";
+    // std::cout<<"Level: "<< level <<"\n";
     SSTable cs(path_control(level, oldest_level_num));
     int cs_min = cs.get_min();
     int cs_max = cs.get_max();
@@ -537,7 +511,6 @@ void templatedb::DB::compact(int level) {
         all_tombs.clear();
         MemTable mmt(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
         mmt.save(path_control(level + 1, 0));
-        std::cout<< "max save"<<path_control(level + 1, 0)<<"\n";
 
         auto& filelist = sstables_file[level];
         auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
@@ -547,7 +520,6 @@ void templatedb::DB::compact(int level) {
         sstables_file.push_back({0});
         levels_size[level] -= cs.get_size();
         levels_size.push_back(merged_entries.size());
-        std::cout << "delete path"<<path_control(level, oldest_level_num) <<"\n";
         std::remove(path_control(level, oldest_level_num).c_str());
         normalize_filenames(level);
         max_level++;
@@ -658,13 +630,11 @@ void templatedb::DB::compact(int level) {
     int new_file_id = sstables_file[level + 1].size();
     MemTable new_sstable =  MemTable(new_entries, deduped_tombs, min, max, new_entries.size()+deduped_tombs.size(), start_seq);
     new_sstable.save(path_control(level + 1, new_file_id));
-    std::cout << "new sstable save path"<< path_control(level + 1, new_file_id)<<"\n";
     sstables_file[level + 1].push_back(new_file_id);
     levels_size[level + 1] += (new_entries.size()+deduped_tombs.size() - overlap_sum);
     db_size -= overlap_sum + cs_size - (new_entries.size()+deduped_tombs.size() );
 
     std::remove(path_control(level, oldest_level_num).c_str());
-    std::cout <<"remove old" << path_control(level, oldest_level_num)<<"\n";
     auto& filelist = sstables_file[level];
     auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
     if (it != filelist.end()) 
@@ -674,7 +644,6 @@ void templatedb::DB::compact(int level) {
 
     for (int f : overlap_files) {;
         std::remove(path_control(level + 1, f).c_str());
-        std::cout <<"remove merge" << path_control(level + 1, f)<<"\n";
     }
 
     std::vector<int> updated_filelist;
@@ -688,7 +657,7 @@ void templatedb::DB::compact(int level) {
     normalize_filenames(level);
     normalize_filenames(level + 1);
     if (levels_size[level + 1] >= level_size_base * level_size_multi * (level+1)){
-        std::cout << "Start recursion"<<"\n";
+        // std::cout << "Start recursion"<<"\n";
         
         compact(level + 1);
     }
