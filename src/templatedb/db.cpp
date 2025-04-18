@@ -45,18 +45,18 @@ void DB::put(int key, Value val)
 
 
 static bool entry_cmp(const Entry& a, const Entry& b) {
-    if (a.key != b.key) return a.key < b.key;          // key 升序
-    return a.seq > b.seq;                              // seq 降序（新版本在前）
+    if (a.key != b.key) return a.key < b.key;          // key increase
+    return a.seq > b.seq;                              // seq decrease(make newest)
 }
 
 static bool tomb_cmp(const RangeTomb& a, const RangeTomb& b) {
-    if (a.start != b.start) return a.start < b.start; // start 升序
-    return a.seq > b.seq; // 相同 start 的，先处理更新的 tombstone
+    if (a.start != b.start) return a.start < b.start; 
+    return a.seq > b.seq;
 }
 
 
 static std::vector<Fragment> build_fragments(const std::vector<RangeTomb>& tombs) {
-    // 1. 收集所有边界
+
     std::set<int> bounds;
     for (const auto& t : tombs) {
         bounds.insert(t.start);
@@ -93,11 +93,11 @@ static bool is_key_covered_by_fragment(const std::vector<Fragment>& fragments, i
         const Fragment& frag = fragments[mid];
 
         if (key < frag.start) {
-            right = mid - 1;  // key 在当前段左边
+            right = mid - 1;  // key in the left
         } else if (key >= frag.end) {
-            left = mid + 1;   // key 在当前段右边
+            left = mid + 1;   // key in the right
         } else {
-            // key ∈ [frag.start, frag.end)
+            // key belong [frag.start, frag.end)
             return frag.max_seq > key_seq;
         }
     }
@@ -130,7 +130,7 @@ std::vector<Value> DB::scan() {
 
     std::vector<Fragment> fragments = build_fragments(tombs);
 
-    // === 2. 构造 iterator heap：按 key 升序，同 key 只输出第一个 ===
+    //only need one key
     struct Item {
         Entry entry;
         int source; // 0 = MemTable, 1~n = SSTable[i-1]
@@ -154,7 +154,7 @@ std::vector<Value> DB::scan() {
             pq.push({sstables[i].next().value(), i + 1});
     }
 
-    // === 3. Heap merge with dedup & filter ===
+    // heap merge, filter
     while (!pq.empty()) {
         Item item = pq.top(); pq.pop();
         Entry& e = item.entry;
@@ -191,7 +191,7 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
     std::unordered_set<int> seen_keys;
     std::vector<RangeTomb> tombs;
 
-    // === 收集所有 range tombstones，构造 fragments ===
+    // iuse all tombs for fragments
     mmt.reset_range_iterator();
     while (mmt.range_tombs_has_next())
         tombs.push_back(mmt.range_tombs_next().value());
@@ -209,7 +209,7 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
 
     std::vector<Fragment> fragments = build_fragments(tombs);
 
-    // === 构建 iterator 优先队列 ===
+
     struct Item {
         Entry entry;
         int source_id; // 0 = MemTable, 1~n = SSTable[i-1]
@@ -232,19 +232,19 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
             pq.push({sstables[i].next().value(), i + 1});
     }
 
-    // === 扫描合并，并筛选 min_key ~ max_key 范围内有效值 ===
+    // Scan and merge, and filter the valid values within the range of min_key to max_key
     while (!pq.empty()) {
         Item item = pq.top(); pq.pop();
         Entry& e = item.entry;
         int src = item.source_id;
 
-        // 超出 scan 范围（右边界）
+        // righ bond
         if (e.key >= max_key)
             break;
 
-        // 左边界外，不用考虑重复 key，直接跳过
+        // left bond
         if (e.key < min_key) {
-            // 不记录 seen，防止 e.key 在 min_key 之后还有新版本
+            // need check for newest
         } else if (!seen_keys.count(e.key)) {
             seen_keys.insert(e.key);
 
@@ -253,7 +253,7 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
             }
         }
 
-        // 推进对应的 iterator
+        // iterator
         if (is_mmt[src]) {
             if (mmt.has_next())
                 pq.push({mmt.next().value(), src});
