@@ -11,20 +11,21 @@ SSTable::SSTable()
     max = INT32_MIN;
 }
 
-SSTable::SSTable(const std::vector<templatedb::Entry> &new_entries, const std::vector<templatedb::RangeTomb> &new_tombs, 
-    int new_min, int new_max, uint64_t new_size, uint64_t new_seq_start)
-{
-    entries = new_entries;
-    tombs = new_tombs;
-    min = new_min;
-    max = new_max;
-    size = new_size;
-    seq_start = new_seq_start;
-
-}
-
-
 static std::vector<templatedb::Fragment> build_fragments(const std::vector<templatedb::RangeTomb>& tombs);
+
+void SSTable::load_key_offset(){
+    std::string line;
+    infile.clear();
+    infile.seekg(key_index_offset);
+    while (std::getline(infile, line)) {
+        std::istringstream ss(line);
+        int key;
+        uint64_t raw_offset;
+        ss >> key >> raw_offset;
+        std::streampos offset = static_cast<std::streampos>(raw_offset);
+        key_offsets.push_back({key, offset});
+    }
+}
 
 SSTable::SSTable(const std::string &filePath)
 {
@@ -41,78 +42,79 @@ SSTable::SSTable(const std::string &filePath)
     std::getline(infile, line); min = std::stoi(line);
     std::getline(infile, line); max = std::stoi(line);
     std::getline(infile, line); seq_start = std::stoull(line);
+    std::getline(infile, line); int bits_per_elements = std::stoull(line);
     std::getline(infile, line); entry_offset = std::stoull(line);
     std::getline(infile, line); tomb_offset = std::stoull(line);
     std::getline(infile, line); key_index_offset = std::stoull(line);
+    std::getline(infile, line); int num_elements = std::stoull(line);
+    std::getline(infile, line); streamoff bloom_filter_offset = std::stoull(line);
 
+    bloom_filter = BF::BloomFilter(num_elements, bits_per_elements);
+    infile.seekg(bloom_filter_offset);
+    std::getline(infile, line);
+    for (int i = 0; i < line.size(); i++){
+        bloom_filter.bf_vec[i] = (line[i] == '1');
+    }
+    
     is_range_delete = (tombs_size > 0);
-    infile.seekg(key_index_offset);
-    while (std::getline(infile, line)) {
-        std::istringstream ss(line);
-        int key;
-        uint64_t raw_offset;
-        ss >> key >> raw_offset;
-        std::streampos offset = static_cast<std::streampos>(raw_offset);
-        key_offsets.push_back({key, offset});
-    }
 }
 
-bool SSTable::save(const std::string& filePath)
-{
-    std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
-    if (!file.is_open()) return false;
+// bool SSTable::save(const std::string& filePath)
+// {
+//     std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
+//     if (!file.is_open()) return false;
 
-    // Step 1: 写 header 占位（offset 行只写换行）
-    file << size << "\n";
-    file << tombs.size() << "\n";
-    file << min << "\n";
-    file << max << "\n";
-    file << seq_start << "\n";
+//     // Step 1: 写 header 占位（offset 行只写换行）
+//     file << size << "\n";
+//     file << tombs.size() << "\n";
+//     file << min << "\n";
+//     file << max << "\n";
+//     file << seq_start << "\n";
 
-    std::streampos offset_pos = file.tellp();
+//     std::streampos offset_pos = file.tellp();
 
-    // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
-    for (int i = 0; i < 3; ++i) {
-        file << "          \n";  // 10 spaces + \n
-    }
+//     // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
+//     for (int i = 0; i < 3; ++i) {
+//         file << "          \n";  // 10 spaces + \n
+//     }
 
-    // Step 2: entries
-    std::vector<std::pair<int, std::streampos>> key_offsets;
-    std::unordered_set<int> seen;
-    std::streampos entry_offset = file.tellp();
+//     // Step 2: entries
+//     std::vector<std::pair<int, std::streampos>> key_offsets;
+//     std::unordered_set<int> seen;
+//     std::streampos entry_offset = file.tellp();
 
-    for (const auto& e : entries) {
-        std::streampos pos = file.tellp();
-        if (!seen.count(e.key)) {
-            key_offsets.push_back({e.key, pos});
-            seen.insert(e.key);
-        }
-        file << e.seq << " " << (e.tomb ? 1 : 0) << " " << e.key;
-        for (int v : e.val.items) file << " " << v;
-        file << "\n";
-    }
+//     for (const auto& e : entries) {
+//         std::streampos pos = file.tellp();
+//         if (!seen.count(e.key)) {
+//             key_offsets.push_back({e.key, pos});
+//             seen.insert(e.key);
+//         }
+//         file << e.seq << " " << (e.tomb ? 1 : 0) << " " << e.key;
+//         for (int v : e.val.items) file << " " << v;
+//         file << "\n";
+//     }
 
-    // Step 3: tombstones
-    std::streampos tomb_offset = file.tellp();
-    for (const auto& t : tombs) {
-        file << t.seq << " " << t.start << " " << t.end << "\n";
-    }
+//     // Step 3: tombstones
+//     std::streampos tomb_offset = file.tellp();
+//     for (const auto& t : tombs) {
+//         file << t.seq << " " << t.start << " " << t.end << "\n";
+//     }
 
-    // Step 4: key-offset table
-    std::streampos key_index_offset = file.tellp();
-    for (const auto& [key, pos] : key_offsets) {
-        file << key << " " << static_cast<uint64_t>(pos) << "\n";
-    }
+//     // Step 4: key-offset table
+//     std::streampos key_index_offset = file.tellp();
+//     for (const auto& [key, pos] : key_offsets) {
+//         file << key << " " << static_cast<uint64_t>(pos) << "\n";
+//     }
 
-    // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
-    file.seekp(offset_pos);
-    file << std::setw(10) << std::left << entry_offset << "\n"
-         << std::setw(10) << std::left << tomb_offset << "\n"
-         << std::setw(10) << std::left << key_index_offset << "\n";
+//     // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
+//     file.seekp(offset_pos);
+//     file << std::setw(10) << std::left << entry_offset << "\n"
+//          << std::setw(10) << std::left << tomb_offset << "\n"
+//          << std::setw(10) << std::left << key_index_offset << "\n";
 
-    file.close();
-    return true;
-}
+//     file.close();
+//     return true;
+// }
 
 void SSTable::load_tombs() {
     if (!is_range_delete || !tombs.empty()){
@@ -134,10 +136,20 @@ void SSTable::load_tombs() {
     }
 }
 
+
+
 std::optional<templatedb::Value> SSTable::get(int key)
 {
     if (key > max || key < min){
         return std::nullopt;
+    }
+
+    if (!bloom_filter.query(std::to_string(key))){
+        templatedb::Value(false);
+    }
+
+    if (!key_offset_generate){
+        load_key_offset();
     }
     // 二分查找第一个 key 匹配的 entry 起点
     int left = 0, right = key_offsets.size() - 1;
@@ -375,6 +387,9 @@ std::optional<templatedb::Entry> SSTable::next()
 
 void SSTable::reset_iterator()
 {
+    if (!key_offset_generate){
+        load_key_offset();
+    }
     iter_index = 0;
 }
 

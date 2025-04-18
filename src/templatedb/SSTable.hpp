@@ -7,20 +7,15 @@
 #include <iostream>
 #include <fstream>
 
-// #include "../BloomFilter/BloomFilter.h"
+#include "BloomFilter.h"
 #include "struct.hpp"
 
 class SSTable
 {
 public:
-    // BF::BloomFilter *bloomFilter;
     SSTable();
-    SSTable(const std::vector<templatedb::Entry>& entries,
-        const std::vector<templatedb::RangeTomb>& tombs,
-        int min, int max,
-        uint64_t size, uint64_t seq_start);
     SSTable(const std::string& filePath);
-    bool save(const std::string& filePath);
+    // bool save(const std::string& filePath);
 
     std::optional<templatedb::Value> get(int key);
     
@@ -46,12 +41,14 @@ public:
     std::optional<templatedb::RangeTomb> range_tombs_next();
     bool range_tombs_has_next();
     void reset_range_iterator();
+    void load_key_offset();
 
 private:
     std::vector<templatedb::Entry> entries;
     std::vector<templatedb::RangeTomb> tombs;
     std::vector<templatedb::Fragment> fragments;
     bool is_range_delete = false;
+    bool key_offset_generate = false;
     uint64_t size = 0;
     uint64_t tombs_size = 0;
     uint64_t seq_start = 0;
@@ -65,6 +62,7 @@ private:
     std::streampos tomb_offset;
     std::streamoff key_index_offset;
     std::vector<std::pair<int, std::streampos>> key_offsets;
+    BF::BloomFilter bloom_filter;
     void load_tombs();
     void load_entries();
 };

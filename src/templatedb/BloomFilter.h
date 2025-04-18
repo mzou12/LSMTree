@@ -18,10 +18,10 @@ public:
 
 	int getIndexNum();
 	int getSize();
+	vector< bool > bf_vec;
 private:
 	int numIndex;
 	int size;
-	vector< bool > bf_vec;
 
 	void makeBloomFilter();
 	void getIndex( string key, vector<int>* index );
