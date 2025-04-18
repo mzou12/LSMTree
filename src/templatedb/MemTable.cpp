@@ -35,7 +35,7 @@ bool MemTable::save(const std::string &filePath)
     std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) return false;
 
-    // Step 1: 写 header 占位（offset 行只写换行）
+    // header
     file << size << "\n";
     file << tombs.size() << "\n";
     file << min << "\n";
@@ -44,7 +44,7 @@ bool MemTable::save(const std::string &filePath)
 
     std::streampos offset_pos = file.tellp();
 
-    // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
+    // 3 entry offset tomb offset key_index_offset
     for (int i = 0; i < 3; ++i) {
         file << "          \n";  // 10 spaces + \n
     }
@@ -154,18 +154,18 @@ bool MemTable::hasRangeDelete()
 }
 
 static bool entry_cmp(const templatedb::Entry& a, const templatedb::Entry& b) {
-    if (a.key != b.key) return a.key < b.key;          // key 升序
-    return a.seq > b.seq;                              // seq 降序（新版本在前）
+    if (a.key != b.key) return a.key < b.key;          // key increase
+    return a.seq > b.seq;                              // seq decrease for newer version
 }
 
 void MemTable::sort_entries() {
-    std::sort(entries.begin(), entries.end(), entry_cmp); // 如果你用 std::vector
+    std::sort(entries.begin(), entries.end(), entry_cmp); 
 }
 
 
 static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
-    if (a.start != b.start) return a.start < b.start; // start 升序
-    return a.seq > b.seq; // 相同 start 的，先处理更新的 tombstone
+    if (a.start != b.start) return a.start < b.start;
+    return a.seq > b.seq; 
 }
 
 void MemTable::sort_tombs(){

@@ -47,13 +47,13 @@ void DB::put(int key, Value val)
 
 
 static bool entry_cmp(const Entry& a, const Entry& b) {
-    if (a.key != b.key) return a.key < b.key;          // key 升序
-    return a.seq > b.seq;                              // seq 降序（新版本在前）
+    if (a.key != b.key) return a.key < b.key;          // key increase
+    return a.seq > b.seq;                              // seq decrease
 }
 
 static bool tomb_cmp(const RangeTomb& a, const RangeTomb& b) {
-    if (a.start != b.start) return a.start < b.start; // start 升序
-    return a.seq > b.seq; // 相同 start 的，先处理更新的 tombstone
+    if (a.start != b.start) return a.start < b.start; 
+    return a.seq > b.seq;
 }
 
 
@@ -112,7 +112,7 @@ std::vector<Value> DB::scan() {
     std::vector<Value> result;
     std::unordered_set<int> seen_keys;
 
-    // === 1. 收集所有 RangeTombstone，构造 fragments ===
+    // build fragments
     std::vector<RangeTomb> tombs;
 
     mmt.reset_range_iterator();
@@ -132,7 +132,7 @@ std::vector<Value> DB::scan() {
 
     std::vector<Fragment> fragments = build_fragments(tombs);
 
-    // === 2. 构造 iterator heap：按 key 升序，同 key 只输出第一个 ===
+    // iterator
     struct Item {
         Entry entry;
         int source; // 0 = MemTable, 1~n = SSTable[i-1]
@@ -156,7 +156,7 @@ std::vector<Value> DB::scan() {
             pq.push({sstables[i].next().value(), i + 1});
     }
 
-    // === 3. Heap merge with dedup & filter ===
+    // heap merge
     while (!pq.empty()) {
         Item item = pq.top(); pq.pop();
         Entry& e = item.entry;
@@ -193,7 +193,7 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
     std::unordered_set<int> seen_keys;
     std::vector<RangeTomb> tombs;
 
-    // === 收集所有 range tombstones，构造 fragments ===
+    // build tombs
     mmt.reset_range_iterator();
     while (mmt.range_tombs_has_next())
         tombs.push_back(mmt.range_tombs_next().value());
@@ -211,7 +211,7 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
 
     std::vector<Fragment> fragments = build_fragments(tombs);
 
-    // === 构建 iterator 优先队列 ===
+    // priority queue
     struct Item {
         Entry entry;
         int source_id; // 0 = MemTable, 1~n = SSTable[i-1]
@@ -234,19 +234,19 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
             pq.push({sstables[i].next().value(), i + 1});
     }
 
-    // === 扫描合并，并筛选 min_key ~ max_key 范围内有效值 ===
+    // scan and merge
     while (!pq.empty()) {
         Item item = pq.top(); pq.pop();
         Entry& e = item.entry;
         int src = item.source_id;
 
-        // 超出 scan 范围（右边界）
+        // over scan level
         if (e.key >= max_key)
             break;
 
-        // 左边界外，不用考虑重复 key，直接跳过
+        // left
         if (e.key < min_key) {
-            // 不记录 seen，防止 e.key 在 min_key 之后还有新版本
+            // for search new
         } else if (!seen_keys.count(e.key)) {
             seen_keys.insert(e.key);
 
@@ -255,7 +255,7 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
             }
         }
 
-        // 推进对应的 iterator
+        // keep going
         if (is_mmt[src]) {
             if (mmt.has_next())
                 pq.push({mmt.next().value(), src});
