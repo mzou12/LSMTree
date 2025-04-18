@@ -49,11 +49,14 @@ SSTable::SSTable(const std::string &filePath)
     std::getline(infile, line); int num_elements = std::stoull(line);
     std::getline(infile, line); streamoff bloom_filter_offset = std::stoull(line);
 
-    bloom_filter = BF::BloomFilter(num_elements, bits_per_elements);
-    infile.seekg(bloom_filter_offset);
-    std::getline(infile, line);
-    for (int i = 0; i < line.size(); i++){
-        bloom_filter.bf_vec[i] = (line[i] == '1');
+    if (num_elements > 0){
+        use_bloom = true;
+        bloom_filter = BF::BloomFilter(num_elements, bits_per_elements);
+        infile.seekg(bloom_filter_offset);
+        std::getline(infile, line);
+        for (int i = 0; i < line.size(); i++){
+            bloom_filter.bf_vec[i] = (line[i] == '1');
+        }
     }
     
     is_range_delete = (tombs_size > 0);
@@ -144,7 +147,7 @@ std::optional<templatedb::Value> SSTable::get(int key)
         return std::nullopt;
     }
 
-    if (!bloom_filter.query(std::to_string(key))){
+    if (use_bloom && !bloom_filter.query(std::to_string(key))){
         templatedb::Value(false);
     }
 

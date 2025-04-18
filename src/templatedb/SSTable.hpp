@@ -49,6 +49,7 @@ private:
     std::vector<templatedb::Fragment> fragments;
     bool is_range_delete = false;
     bool key_offset_generate = false;
+    bool use_bloom = false;
     uint64_t size = 0;
     uint64_t tombs_size = 0;
     uint64_t seq_start = 0;

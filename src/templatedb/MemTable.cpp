@@ -42,7 +42,7 @@ bool MemTable::save(const std::string &filePath)
     file << min << "\n";
     file << max << "\n";
     file << seq_start << "\n";
-    file << 10 << "\n"; //bitsPerElements
+    file << 10 << "\n";//bitsPerElements
 
     std::streampos offset_pos = file.tellp();
 
@@ -74,12 +74,14 @@ bool MemTable::save(const std::string &filePath)
     }
 
     std::streampos bloom_filter_offset = file.tellp();
-    BF::BloomFilter bloom_filter(seen.size(), 10);
-    for (int key: seen){
-        bloom_filter.program(std::to_string(key));
-    }
-    for (bool bit : bloom_filter.bf_vec) {
-        file << (bit ? '1' : '0');
+    if (!seen.empty()){
+        BF::BloomFilter bloom_filter(seen.size(), 10);
+        for (int key: seen){
+            bloom_filter.program(std::to_string(key));
+        }
+        for (bool bit : bloom_filter.bf_vec) {
+            file << (bit ? '1' : '0');
+        }
     }
     file << "\n";
 
