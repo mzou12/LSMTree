@@ -509,6 +509,17 @@ void templatedb::DB::compact(int level) {
             }
         }
         all_tombs.clear();
+        if (merged_entries.empty()){
+            auto& filelist = sstables_file[level];
+            auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
+            if (it != filelist.end()) 
+                filelist.erase(it);
+                
+            levels_size[level] -= cs.get_size();
+            std::remove(path_control(level, oldest_level_num).c_str());
+            normalize_filenames(level);
+            return;
+        }
         MemTable mmt(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
         mmt.save(path_control(level + 1, 0));
 
