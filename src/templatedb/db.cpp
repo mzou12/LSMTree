@@ -519,7 +519,7 @@ void templatedb::DB::compact(int level) {
         levels_size.at(new_level) += this_level_size;
         svae_mmt.save(path_control(new_level, sstables_file.at(new_level).size()));
         sstables_file.at(new_level).push_back(sstables_file.at(new_level).size());
-        if (levels_size.at(new_level) >= level_size_base * level_size_multi * new_level){
+        if (levels_size.at(new_level) >= level_size_base * pow(level_size_multi, new_level)){
             compact(new_level);
         }
     } else {
