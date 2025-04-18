@@ -514,7 +514,6 @@ void templatedb::DB::compact(int level) {
             if (it != filelist.end()) 
                 filelist.erase(it);
             
-            sstables_file.push_back({0});
             levels_size[level] -= cs.get_size();
             std::remove(path_control(level, oldest_level_num).c_str());
             normalize_filenames(level);
