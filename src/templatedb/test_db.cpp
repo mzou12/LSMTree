@@ -24,10 +24,10 @@ int main() {
     // point delete
     db.del(1);
 
-    // // range delete
+    // range delete
     db.del(4, 6);
 
-    for (int i = 13; i < 26; ++i) {
+    for (int i = 13; i < 213; ++i) {
         db.put(i, Value({i, i}));
     }
 
@@ -42,6 +42,10 @@ int main() {
     assert(!db.get(11).visible);
     db.put(5, Value({5,5}));
     assert(db.get(5).visible);
+    assert(db.get(100).visible);
+    assert(!db.get(1000).visible);
+    db.del(100, 213);
+    assert(!db.get(100).visible);
 
     // 测试 scan（完整）
     std::cout<< "start scan"<<"\n";
