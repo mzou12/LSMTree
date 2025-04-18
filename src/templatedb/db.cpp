@@ -110,7 +110,7 @@ std::vector<Value> DB::scan() {
     std::vector<Value> result;
     std::unordered_set<int> seen_keys;
 
-    // === 1. 收集所有 RangeTombstone，构造 fragments ===
+    // build fragments
     std::vector<RangeTomb> tombs;
 
     mmt.reset_range_iterator();
