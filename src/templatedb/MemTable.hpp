@@ -7,6 +7,7 @@
 #include <fstream>
 
 #include "struct.hpp"
+#include "BloomFilter.h"
 
 class MemTable
 {

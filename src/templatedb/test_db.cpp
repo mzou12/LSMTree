@@ -24,16 +24,16 @@ int main() {
     // point delete
     db.del(1);
 
-    // // range delete
+    // range delete
     db.del(4, 6);
 
-    for (int i = 13; i < 26; ++i) {
+    for (int i = 13; i < 213; ++i) {
         db.put(i, Value({i, i}));
     }
 
     db.del(10, 12);
     std::cout<< "start get"<<"\n";
-    // 测试 get
+    // get
     assert(db.get(0).visible);
     assert(!db.get(1).visible);      // 被 point delete
     assert(!db.get(5).visible);      // 被 range delete
@@ -42,8 +42,12 @@ int main() {
     assert(!db.get(11).visible);
     db.put(5, Value({5,5}));
     assert(db.get(5).visible);
+    assert(db.get(100).visible);
+    assert(!db.get(1000).visible);
+    db.del(100, 213);
+    assert(!db.get(100).visible);
 
-    // 测试 scan（完整）
+    // scan
     std::cout<< "start scan"<<"\n";
     auto vals = db.scan();
     std::cout << "[SCAN ALL] Returned " << vals.size() << " items\n";
@@ -52,7 +56,7 @@ int main() {
         std::cout << "\n";
     }
 
-    // 测试 scan(min, max)
+    // scan(min, max)
     std::cout<< "start scan for range"<<"\n";
     auto vals2 = db.scan(0, 5);
     std::cout << "[SCAN 0-5] Returned " << vals2.size() << " items\n";
@@ -61,6 +65,6 @@ int main() {
         std::cout << "\n";
     }
 
-    std::cout << "[PASS] All assertions passed.\n";
+    std::cout << "Pass\n";
     return 0;
 }
