@@ -30,22 +30,24 @@ bool MemTable::flush(const std::string &filePath)
     return save(filePath);
 }
 
+
 bool MemTable::save(const std::string &filePath)
 {
     std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) return false;
 
-    // Step 1: 写 header 占位（offset 行只写换行）
+    // Step 1: header
     file << size << "\n";
     file << tombs.size() << "\n";
     file << min << "\n";
     file << max << "\n";
     file << seq_start << "\n";
+    file << 10 << "\n"; //bitsPerElements
 
     std::streampos offset_pos = file.tellp();
 
-    // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
-    for (int i = 0; i < 3; ++i) {
+    // 5 line, entry_offset, tomb_offset, key_index_offset, num_elements, bloom_filter_offset
+    for (int i = 0; i < 5; ++i) {
         file << "          \n";  // 10 spaces + \n
     }
 
@@ -71,17 +73,29 @@ bool MemTable::save(const std::string &filePath)
         file << t.seq << " " << t.start << " " << t.end << "\n";
     }
 
+    std::streampos bloom_filter_offset = file.tellp();
+    BF::BloomFilter bloom_filter(seen.size(), 10);
+    for (int key: seen){
+        bloom_filter.program(std::to_string(key));
+    }
+    for (bool bit : bloom_filter.bf_vec) {
+        file << (bit ? '1' : '0');
+    }
+    file << "\n";
+
     // Step 4: key-offset table
     std::streampos key_index_offset = file.tellp();
     for (const auto& [key, pos] : key_offsets) {
         file << key << " " << static_cast<uint64_t>(pos) << "\n";
     }
 
-    // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
+    // Step 5: rewrite to header
     file.seekp(offset_pos);
     file << std::setw(10) << std::left << entry_offset << "\n"
          << std::setw(10) << std::left << tomb_offset << "\n"
-         << std::setw(10) << std::left << key_index_offset << "\n";
+         << std::setw(10) << std::left << key_index_offset << "\n"
+         << std::setw(10) << std::left << seen.size() << "\n" // BLOOMFILTER numElements
+         << std::setw(10) << std::left << bloom_filter_offset << "\n" ;
 
     file.close();
     return true;
@@ -154,18 +168,18 @@ bool MemTable::hasRangeDelete()
 }
 
 static bool entry_cmp(const templatedb::Entry& a, const templatedb::Entry& b) {
-    if (a.key != b.key) return a.key < b.key;          // key 升序
-    return a.seq > b.seq;                              // seq 降序（新版本在前）
+    if (a.key != b.key) return a.key < b.key;          // key increase
+    return a.seq > b.seq;                              // seq decrease
 }
 
 void MemTable::sort_entries() {
-    std::sort(entries.begin(), entries.end(), entry_cmp); // 如果你用 std::vector
+    std::sort(entries.begin(), entries.end(), entry_cmp);
 }
 
 
 static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
-    if (a.start != b.start) return a.start < b.start; // start 升序
-    return a.seq > b.seq; // 相同 start 的，先处理更新的 tombstone
+    if (a.start != b.start) return a.start < b.start; 
+    return a.seq > b.seq;
 }
 
 void MemTable::sort_tombs(){
