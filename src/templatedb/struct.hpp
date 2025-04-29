@@ -29,6 +29,12 @@ struct Entry {
             return key < other.key;
         return seq > other.seq;
     }
+
+    bool operator>(const Entry& other) const {
+        if (key != other.key)
+            return key > other.key;
+        return seq < other.seq;
+    }
 };
 
 struct RangeTomb {
@@ -53,15 +59,16 @@ struct Fragment {
     }
 };
 
-template<typename T>
+template<typename K, typename T>
 struct Node{
+    K key;
     T value;
     std::vector<Node *> forward;
-    Node(const T& v, size_t lvl): 
-        value(v), forward(lvl, nullptr) {}
+    Node(const K& k, const T& v, size_t lvl)
+        : key(k), value(v), forward(lvl, nullptr) {}
     
-    Node(size_t lvl):
-        value(), forward(lvl, nullptr) {}
+    Node(size_t lvl)
+        : key(), value(), forward(lvl, nullptr) {}
 };
 
 } // namespace templatedb

@@ -11,7 +11,7 @@ MemTable::MemTable()
     max = INT32_MIN;
 }
 
-MemTable::MemTable(const SkipList<templatedb::Entry> &new_entries, const SkipList<templatedb::RangeTomb> &new_tombs, 
+MemTable::MemTable(const SkipList<int, templatedb::Entry> &new_entries, const std::vector<templatedb::RangeTomb> &new_tombs, 
     int new_min, int new_max, uint64_t new_size, uint64_t new_seq_start)
 {
     entries = new_entries;
@@ -25,8 +25,9 @@ MemTable::MemTable(const SkipList<templatedb::Entry> &new_entries, const SkipLis
 
 bool MemTable::flush(const std::string &filePath)
 {
-    sort_entries();
-    sort_tombs();
+    if (!range_sorted){
+        sort_tombs();
+    }
     return save(filePath);
 }
 
@@ -93,8 +94,7 @@ std::optional<templatedb::Value> MemTable::get(int key)
     if (key > max || key < min){
         return std::nullopt;
     }
-    templatedb::Entry* best = nullptr;
-    
+    std::optional<templatedb::Entry> best = entries.find(key);
     // for (auto entry = entries.rbegin(); entry != entries.rend(); ++entry){
     //     if (entry->key == key) {
     //         if (!best || entry->seq > best->seq) {
@@ -104,9 +104,9 @@ std::optional<templatedb::Value> MemTable::get(int key)
     // }
     for (const auto& t : tombs) {
         if (key >= t.start && key < t.end) {
-            if (!best){
+            if (!best.has_value()){
                 return templatedb::Value(false); 
-            } else if (t.seq > best->seq){
+            } else if (t.seq > best.value().seq){
                 return templatedb::Value(false); 
             }
         }
@@ -119,10 +119,9 @@ std::optional<templatedb::Value> MemTable::get(int key)
 void MemTable::add(int key, const templatedb::Value &val, uint64_t seq)
 {
     size++;
-    entries.insert(templatedb::Entry{false, seq, key, val});
+    entries.insert(key, templatedb::Entry{false, seq, key, val});
     if (seq_start == -1)
         seq_start = seq;
-    sorted = false;
     min = std::min(min, key);
     max = std::max(max, key);
 }
@@ -130,10 +129,9 @@ void MemTable::add(int key, const templatedb::Value &val, uint64_t seq)
 void MemTable::point_delete(int key, uint64_t seq)
 {
     size++;
-    entries.insert(templatedb::Entry{true, seq, key, templatedb::Value(false)});
+    entries.insert(key, templatedb::Entry{true, seq, key, templatedb::Value(false)});
     if (seq_start == -1)
         seq_start = seq;
-    sorted = false;
     min = std::min(min, key);
     max = std::max(max, key);
 }
@@ -141,7 +139,7 @@ void MemTable::point_delete(int key, uint64_t seq)
 void MemTable::range_delete(int range_min, int range_max, uint64_t seq)
 {
     size++;
-    tombs.insert(templatedb::RangeTomb{range_min, range_max, seq});
+    tombs.push_back(templatedb::RangeTomb{range_min, range_max, seq});
     if (seq_start == -1)
         seq_start = seq;
     range_sorted = false;
@@ -164,14 +162,14 @@ bool MemTable::hasRangeDelete()
 // }
 
 
-// static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
-//     if (a.start != b.start) return a.start < b.start;
-//     return a.seq > b.seq; 
-// }
+static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
+    if (a.start != b.start) return a.start < b.start;
+    return a.seq > b.seq; 
+}
 
-// void MemTable::sort_tombs(){
-//     std::sort(tombs.begin(), tombs.end(), tomb_cmp);
-// }
+void MemTable::sort_tombs(){
+    std::sort(tombs.begin(), tombs.end(), tomb_cmp);
+}
 
 
 void MemTable::clear(){
@@ -181,36 +179,37 @@ void MemTable::clear(){
     seq_start = -1;
     entries.clear();
     tombs.clear();
-    iter_index = 0;
-    range_iter_index = 0;
-    sorted = false;
     range_sorted = false;
 }
 
 std::optional<templatedb::Entry> MemTable::next(){
-    if (!has_next()){
+    if (!entry_iter.hasNext()){
         return std::nullopt;
     }
-    return entries[iter_index++];
+    return entry_iter.next();
 }
 
 bool MemTable::has_next(){
-    return iter_index < entries.size();
+    return entry_iter.hasNext();
 }
 
 void MemTable::reset_iterator(){
-    iter_index = 0;
+    entry_iter = entries.begin();
 }
 
 std::optional<templatedb::RangeTomb> MemTable::range_tombs_next(){
     if (!range_tombs_has_next()) return std::nullopt;
-    return tombs[range_iter_index++];
+    return *(rt_iter++);
 }
 
 bool MemTable::range_tombs_has_next(){
-    return range_iter_index < (tombs.size());
+    return rt_iter != tombs.end();
 }
 
 void MemTable::reset_range_iterator(){
-    range_iter_index = 0;
+    if (!range_sorted){
+        sort_tombs();
+        range_sorted = true;
+    }
+    rt_iter = tombs.begin();
 }

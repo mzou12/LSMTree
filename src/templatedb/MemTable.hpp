@@ -16,8 +16,8 @@ public:
     uint64_t seq_start = -1;
     int min = 0, max;
     MemTable();
-    MemTable(const SkipList<templatedb::Entry>& entries,
-        const SkipList<templatedb::RangeTomb>& tombs,
+    MemTable(const SkipList<int, templatedb::Entry>& entries,
+        const std::vector<templatedb::RangeTomb>& tombs,
         int min, int max,
         uint64_t size, uint64_t seq_start);
     bool flush(const std::string& filePath);
@@ -27,11 +27,8 @@ public:
     void add(int key, const templatedb::Value& val, uint64_t seq);
     void point_delete(int key, uint64_t seq);
     void range_delete(int min, int max, uint64_t seq);
-    const std::vector<templatedb::Entry>& getEntries() const;
-    const std::vector<templatedb::RangeTomb>& getRangeTomb() const;
     bool hasRangeDelete();
 
-    void sort_entries();
     void sort_tombs();
     void clear();
     std::optional<templatedb::Entry> next();
@@ -42,11 +39,10 @@ public:
     void reset_range_iterator();
 
 private:
-    SkipList<templatedb::Entry> entries;
-    SkipList<templatedb::RangeTomb> tombs;
-    int iter_index = 0;
-    int range_iter_index = 0;
-    bool sorted = false;
+    SkipList<int, templatedb::Entry> entries;
+    std::vector<templatedb::RangeTomb> tombs;
+    SkipList<int, templatedb::Entry>::Iterator entry_iter;
+    std::vector<templatedb::RangeTomb>::iterator rt_iter;
     bool range_sorted = false;
     
 };
