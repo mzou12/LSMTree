@@ -11,6 +11,19 @@ SSTable::SSTable()
     max = INT32_MIN;
 }
 
+SSTable::SSTable(const std::vector<templatedb::Entry> &new_entries, const std::vector<templatedb::RangeTomb> &new_tombs, 
+    int new_min, int new_max, uint64_t new_size, uint64_t new_seq_start)
+{
+    entries = new_entries;
+    tombs = new_tombs;
+    min = new_min;
+    max = new_max;
+    size = new_size;
+    seq_start = new_seq_start;
+
+}
+
+
 static std::vector<templatedb::Fragment> build_fragments(const std::vector<templatedb::RangeTomb>& tombs);
 
 void SSTable::load_key_offset(){
@@ -59,62 +72,76 @@ SSTable::SSTable(const std::string &filePath)
     is_range_delete = (tombs_size > 0);
 }
 
-// bool SSTable::save(const std::string& filePath)
-// {
-//     std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
-//     if (!file.is_open()) return false;
 
-//     // Step 1: 写 header 占位（offset 行只写换行）
-//     file << size << "\n";
-//     file << tombs.size() << "\n";
-//     file << min << "\n";
-//     file << max << "\n";
-//     file << seq_start << "\n";
+bool SSTable::save(const std::string &filePath)
+{
+    std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
+    if (!file.is_open()) return false;
 
-//     std::streampos offset_pos = file.tellp();
+    // Step 1: header
+    file << size << "\n";
+    file << tombs.size() << "\n";
+    file << min << "\n";
+    file << max << "\n";
+    file << seq_start << "\n";
+    file << 10 << "\n"; //bitsPerElements
 
-//     // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
-//     for (int i = 0; i < 3; ++i) {
-//         file << "          \n";  // 10 spaces + \n
-//     }
+    std::streampos offset_pos = file.tellp();
 
-//     // Step 2: entries
-//     std::vector<std::pair<int, std::streampos>> key_offsets;
-//     std::unordered_set<int> seen;
-//     std::streampos entry_offset = file.tellp();
+    // 5 line, entry_offset, tomb_offset, key_index_offset, num_elements, bloom_filter_offset
+    for (int i = 0; i < 5; ++i) {
+        file << "          \n";  // 10 spaces + \n
+    }
 
-//     for (const auto& e : entries) {
-//         std::streampos pos = file.tellp();
-//         if (!seen.count(e.key)) {
-//             key_offsets.push_back({e.key, pos});
-//             seen.insert(e.key);
-//         }
-//         file << e.seq << " " << (e.tomb ? 1 : 0) << " " << e.key;
-//         for (int v : e.val.items) file << " " << v;
-//         file << "\n";
-//     }
+    // Step 2: entries
+    std::vector<std::pair<int, std::streampos>> key_offsets;
+    std::unordered_set<int> seen;
+    std::streampos entry_offset = file.tellp();
 
-//     // Step 3: tombstones
-//     std::streampos tomb_offset = file.tellp();
-//     for (const auto& t : tombs) {
-//         file << t.seq << " " << t.start << " " << t.end << "\n";
-//     }
+    for (const auto& e : entries) {
+        std::streampos pos = file.tellp();
+        if (!seen.count(e.key)) {
+            key_offsets.push_back({e.key, pos});
+            seen.insert(e.key);
+        }
+        file << e.seq << " " << (e.tomb ? 1 : 0) << " " << e.key;
+        for (int v : e.val.items) file << " " << v;
+        file << "\n";
+    }
 
-//     // Step 4: key-offset table
-//     std::streampos key_index_offset = file.tellp();
-//     for (const auto& [key, pos] : key_offsets) {
-//         file << key << " " << static_cast<uint64_t>(pos) << "\n";
-//     }
+    // Step 3: tombstones
+    std::streampos tomb_offset = file.tellp();
+    for (const auto& t : tombs) {
+        file << t.seq << " " << t.start << " " << t.end << "\n";
+    }
 
-//     // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
-//     file.seekp(offset_pos);
-//     file << std::setw(10) << std::left << entry_offset << "\n"
-//          << std::setw(10) << std::left << tomb_offset << "\n"
-//          << std::setw(10) << std::left << key_index_offset << "\n";
+    std::streampos bloom_filter_offset = file.tellp();
+    BF::BloomFilter bloom_filter(seen.size(), 10);
+    for (int key: seen){
+        bloom_filter.program(std::to_string(key));
+    }
+    for (bool bit : bloom_filter.bf_vec) {
+        file << (bit ? '1' : '0');
+    }
+    file << "\n";
 
-//     file.close();
-//     return true;
-// }
+    // Step 4: key-offset table
+    std::streampos key_index_offset = file.tellp();
+    for (const auto& [key, pos] : key_offsets) {
+        file << key << " " << static_cast<uint64_t>(pos) << "\n";
+    }
+
+    // Step 5: rewrite to header
+    file.seekp(offset_pos);
+    file << std::setw(10) << std::left << entry_offset << "\n"
+         << std::setw(10) << std::left << tomb_offset << "\n"
+         << std::setw(10) << std::left << key_index_offset << "\n"
+         << std::setw(10) << std::left << seen.size() << "\n" // BLOOMFILTER numElements
+         << std::setw(10) << std::left << bloom_filter_offset << "\n" ;
+
+    file.close();
+    return true;
+}
 
 void SSTable::load_tombs() {
     if (!is_range_delete || !tombs.empty()){
