@@ -506,7 +506,7 @@ void templatedb::DB::compact(int level) {
     // std::cout << "sstables_file 0 1:"<< sstables_file.at(level).at(1)<< "\n";
     std::sort(entries.begin(), entries.end(), entry_cmp);
     std::sort(tombs.begin(), tombs.end(), tomb_cmp);
-    MemTable svae_mmt(entries, tombs, min, max, levels_size.at(level), new_seq_start);
+    SSTable svae_sst(entries, tombs, min, max, levels_size.at(level), new_seq_start);
 
     for (int file_num : sstables_file.at(level)) {
         std::string old_path = path_control(level, file_num);
@@ -517,14 +517,14 @@ void templatedb::DB::compact(int level) {
     int new_level = level + 1;
     if (new_level <= max_level){
         levels_size.at(new_level) += this_level_size;
-        svae_mmt.save(path_control(new_level, sstables_file.at(new_level).size()));
+        svae_sst.save(path_control(new_level, sstables_file.at(new_level).size()));
         sstables_file.at(new_level).push_back(sstables_file.at(new_level).size());
         if (levels_size.at(new_level) >= level_size_base * pow(level_size_multi, new_level)){
             compact(new_level);
         }
     } else {
         levels_size.push_back(this_level_size);
-        svae_mmt.save(path_control(new_level, 0));
+        svae_sst.save(path_control(new_level, 0));
         sstables_file.push_back(std::vector{0});
         max_level += 1;
     }
