@@ -15,7 +15,11 @@ class SSTable
 public:
     SSTable();
     SSTable(const std::string& filePath);
-    // bool save(const std::string& filePath);
+    SSTable(const std::vector<templatedb::Entry>& entries,
+        const std::vector<templatedb::RangeTomb>& tombs,
+        int min, int max,
+        uint64_t size, uint64_t seq_start);
+    bool save(const std::string& filePath);
 
     std::optional<templatedb::Value> get(int key);
     
