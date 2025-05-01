@@ -195,14 +195,18 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
 
     // build tombs
     mmt.reset_range_iterator();
-    while (mmt.range_tombs_has_next())
+    while (mmt.range_tombs_has_next()){
         tombs.push_back(mmt.range_tombs_next().value());
+    }
 
     std::vector<SSTable> sstables;
     for (int i = 0; i <= max_level; ++i) {
         for (int j = sstables_file[i].size() - 1; j >= 0; --j) {
             std::string path = path_control(i, j);
-            sstables.emplace_back(path);
+            SSTable tmp(path);
+            if (tmp.get_max() <= min_key || tmp.get_min() >= max_key)
+                continue;
+            sstables.emplace_back(std::move(tmp));
             sstables.back().reset_range_iterator();
             while (sstables.back().range_tombs_has_next())
                 tombs.push_back(sstables.back().range_tombs_next().value());
