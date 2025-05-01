@@ -145,7 +145,7 @@ std::optional<templatedb::Value> SSTable::get(int key)
     }
 
     if (!bloom_filter.query(std::to_string(key))){
-        return templatedb::Value(false);
+        return std::nullopt;
     }
 
     if (!key_offset_generate){
