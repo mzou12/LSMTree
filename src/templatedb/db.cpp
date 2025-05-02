@@ -18,8 +18,9 @@ templatedb::DB::DB()
 
 Value DB::get(int key)
 {
-    if (mmt.get(key).has_value()){
-        return mmt.get(key).value();
+    std::optional<Value> mmt_value = mmt.get(key);
+    if (mmt_value){
+        return mmt_value.value();
     }
     for (int i = 0; i <= max_level; i++){
         if (sstables_file.at(i).size() == 0){
@@ -525,9 +526,10 @@ void templatedb::DB::compact(int level) {
             // normalize_filenames(level);
             return;
         }
-        MemTable mmt(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
+        SSTable sst(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
         int new_id = generate_id();
-        mmt.save(path_control(new_id));
+        sst.save(path_control(new_id));
+
 
         auto& filelist = sstables_file[level];
         auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
@@ -661,7 +663,7 @@ void templatedb::DB::compact(int level) {
     }
     std::sort(deduped_tombs.begin(), deduped_tombs.end(), tomb_cmp); // sort it, maybe can delete? not sure
     int new_file_id = generate_id();
-    MemTable new_sstable =  MemTable(new_entries, deduped_tombs, min, max, new_entries.size()+deduped_tombs.size(), start_seq);
+    SSTable new_sstable(new_entries, deduped_tombs, min, max, new_entries.size()+deduped_tombs.size(), start_seq);
     new_sstable.save(path_control(new_file_id));
     sstables_file[level + 1].push_back(new_file_id);
     levels_size[level + 1] += (new_entries.size()+deduped_tombs.size() - overlap_sum);

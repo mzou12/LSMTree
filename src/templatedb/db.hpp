@@ -13,6 +13,7 @@
 #include "SSTable.hpp"
 #include "MemTable.hpp"
 #include "struct.hpp"
+#include "SkipList.hpp"
 
 namespace templatedb
 {

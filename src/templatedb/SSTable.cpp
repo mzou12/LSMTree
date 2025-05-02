@@ -112,7 +112,7 @@ bool SSTable::save(const std::string& filePath)
         file << key << " " << static_cast<uint64_t>(pos) << "\n";
     }
 
-    // Step 5: write back
+    // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
     file.seekp(offset_pos);
     file << std::setw(10) << std::left << entry_offset << "\n"
          << std::setw(10) << std::left << tomb_offset << "\n"
