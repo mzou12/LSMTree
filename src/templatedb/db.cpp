@@ -6,6 +6,7 @@
 #include <queue>
 #include <functional>
 #include <map>
+#include <iomanip>
 
 using namespace templatedb;
 
@@ -26,7 +27,7 @@ Value DB::get(int key)
             continue;
         }
         for (int j = sstables_file.at(i).size()-1; j>=0; j--){
-            std::string path = path_control(i, j);
+            std::string path = path_control(sstables_file.at(i).at(j));
             std::optional<Value> check = SSTable(path).get(key);
             if (check.has_value()){
                 return check.value();
@@ -59,7 +60,7 @@ static bool tomb_cmp(const RangeTomb& a, const RangeTomb& b) {
 
 
 static std::vector<Fragment> build_fragments(const std::vector<RangeTomb>& tombs) {
-    // 1. 收集所有边界
+
     std::set<int> bounds;
     for (const auto& t : tombs) {
         bounds.insert(t.start);
@@ -123,7 +124,7 @@ std::vector<Value> DB::scan() {
     std::vector<SSTable> sstables;
     for (int i = 0; i <= max_level; ++i) {
         for (int j = sstables_file[i].size() - 1; j >= 0; --j) {
-            std::string path = path_control(i, j);
+            std::string path = path_control(sstables_file.at(i).at(j));
             sstables.emplace_back(path);
             sstables.back().reset_range_iterator();
             while (sstables.back().range_tombs_has_next())
@@ -196,14 +197,18 @@ std::vector<Value> DB::scan(int min_key, int max_key) {
 
     // build tombs
     mmt.reset_range_iterator();
-    while (mmt.range_tombs_has_next())
+    while (mmt.range_tombs_has_next()){
         tombs.push_back(mmt.range_tombs_next().value());
+    }
 
     std::vector<SSTable> sstables;
     for (int i = 0; i <= max_level; ++i) {
         for (int j = sstables_file[i].size() - 1; j >= 0; --j) {
-            std::string path = path_control(i, j);
-            sstables.emplace_back(path);
+            std::string path = path_control(sstables_file.at(i).at(j));
+            SSTable tmp(path);
+            if (tmp.get_max() <= min_key || tmp.get_min() >= max_key)
+                continue;
+            sstables.emplace_back(std::move(tmp));
             sstables.back().reset_range_iterator();
             while (sstables.back().range_tombs_has_next())
                 tombs.push_back(sstables.back().range_tombs_next().value());
@@ -443,9 +448,9 @@ bool DB::close()
 
 void templatedb::DB::flush()
 {
-    int sst_num = sstables_file.at(0).size();
-    std::string path = path_control(0, sst_num);
-    sstables_file.at(0).push_back(sst_num); // Add file's num
+    int file_id = generate_id();
+    std::string path = path_control(file_id);
+    sstables_file.at(0).push_back(file_id); // Add file's num
     mmt.flush(path);
     levels_size.at(0) += flush_base;
     if (levels_size.at(0) >= level_size_base){
@@ -464,28 +469,28 @@ bool templatedb::DB::flush_check()
     return false;
 }
 
-void templatedb::DB::normalize_filenames(int level){
-    if (level >= sstables_file.size() || sstables_file[level].empty()) 
-        return;
+// void templatedb::DB::normalize_filenames(int level){
+//     if (level >= sstables_file.size() || sstables_file[level].empty()) 
+//         return;
 
-    for (int i = 0; i < sstables_file[level].size(); ++i){
-        if(sstables_file[level].at(i) != i){
-            std::rename(path_control(level, sstables_file[level].at(i)).c_str(),path_control(level, i).c_str());
-        }
-    }
-    int num = sstables_file[level].size();
-    sstables_file[level].clear();
-    for (int i = 0; i < num; ++i){
-        sstables_file[level].push_back(i);
-    }
-}
+//     for (int i = 0; i < sstables_file[level].size(); ++i){
+//         if(sstables_file[level].at(i) != i){
+//             std::rename(path_control(level, sstables_file[level].at(i)).c_str(),path_control(level, i).c_str());
+//         }
+//     }
+//     int num = sstables_file[level].size();
+//     sstables_file[level].clear();
+//     for (int i = 0; i < num; ++i){
+//         sstables_file[level].push_back(i);
+//     }
+// }
 
 void templatedb::DB::compact(int level) {
 
     // choose oldest one in this level become cs(compacted sstable)
     int oldest_level_num = sstables_file.at(level).at(0);
     // std::cout<<"Level: "<< level <<"\n";
-    SSTable cs(path_control(level, oldest_level_num));
+    SSTable cs(path_control(oldest_level_num));
     int cs_min = cs.get_min();
     int cs_max = cs.get_max();
     int cs_size = cs.get_size();
@@ -517,23 +522,25 @@ void templatedb::DB::compact(int level) {
                 filelist.erase(it);
                 
             levels_size[level] -= cs.get_size();
-            std::remove(path_control(level, oldest_level_num).c_str());
-            normalize_filenames(level);
+            std::remove(path_control(oldest_level_num).c_str());
+            // normalize_filenames(level);
             return;
         }
         SSTable sst(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
-        sst.save(path_control(level + 1, 0));
+        int new_id = generate_id();
+        sst.save(path_control(new_id));
+
 
         auto& filelist = sstables_file[level];
         auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
         if (it != filelist.end()) 
             filelist.erase(it);
         
-        sstables_file.push_back({0});
+        sstables_file.push_back({new_id});
         levels_size[level] -= cs.get_size();
         levels_size.push_back(merged_entries.size());
-        std::remove(path_control(level, oldest_level_num).c_str());
-        normalize_filenames(level);
+        std::remove(path_control(oldest_level_num).c_str());
+        // normalize_filenames(level);
         max_level++;
         return;
     }
@@ -546,12 +553,28 @@ void templatedb::DB::compact(int level) {
     int start_seq = INT32_MAX;
     for (int i = sstables_file[level + 1].size() - 1; i >=0 ; --i){
         int file_id = sstables_file[level+1][i];
-        SSTable sst(path_control(level + 1, file_id));
+        SSTable sst(path_control(file_id));
         if (sst.get_min() <= cs_max && sst.get_max() >= cs_min){
             overlap_table.emplace_back(std::move(sst));
             overlap_files.push_back(file_id);
             overlap_sum += sst.get_size();
         }
+    }
+
+    if (overlap_sum == 0){
+        sstables_file[level + 1].push_back(oldest_level_num);
+        levels_size[level + 1] += cs_size;
+        levels_size[level] -= cs_size;
+        auto& filelist = sstables_file[level];
+        auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
+        if (it != filelist.end()) 
+            filelist.erase(it);
+
+        // normalize_filenames(level);
+        if (levels_size[level + 1] >= level_size_base * pow(level_size_multi, level + 1)){
+            compact(level + 1);
+        }
+        return;
     }
 
     std::vector<Entry> merged_entries;
@@ -639,14 +662,14 @@ void templatedb::DB::compact(int level) {
         deduped_tombs.push_back(v);
     }
     std::sort(deduped_tombs.begin(), deduped_tombs.end(), tomb_cmp); // sort it, maybe can delete? not sure
-    int new_file_id = sstables_file[level + 1].size();
+    int new_file_id = generate_id();
     SSTable new_sstable(new_entries, deduped_tombs, min, max, new_entries.size()+deduped_tombs.size(), start_seq);
-    new_sstable.save(path_control(level + 1, new_file_id));
+    new_sstable.save(path_control(new_file_id));
     sstables_file[level + 1].push_back(new_file_id);
     levels_size[level + 1] += (new_entries.size()+deduped_tombs.size() - overlap_sum);
     db_size -= overlap_sum + cs_size - (new_entries.size()+deduped_tombs.size() );
 
-    std::remove(path_control(level, oldest_level_num).c_str());
+    std::remove(path_control(oldest_level_num).c_str());
     auto& filelist = sstables_file[level];
     auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
     if (it != filelist.end()) 
@@ -655,7 +678,7 @@ void templatedb::DB::compact(int level) {
     levels_size[level] -= cs_size;
 
     for (int f : overlap_files) {;
-        std::remove(path_control(level + 1, f).c_str());
+        std::remove(path_control(f).c_str());
     }
 
     std::vector<int> updated_filelist;
@@ -666,8 +689,8 @@ void templatedb::DB::compact(int level) {
     }
     sstables_file[level + 1] = updated_filelist;
 
-    normalize_filenames(level);
-    normalize_filenames(level + 1);
+    // normalize_filenames(level);
+    // normalize_filenames(level + 1);
     if (levels_size[level + 1] >= level_size_base * pow(level_size_multi, level + 1)){
         // std::cout << "Start recursion"<<"\n";
         
@@ -676,9 +699,16 @@ void templatedb::DB::compact(int level) {
 
 }
 
-std::string templatedb::DB::path_control(int level, int num)
+std::string templatedb::DB::path_control(int file_id)
 {
-    return basic_path + std::to_string(level) + "_" + std::to_string(num) + ".data";
+    std::ostringstream oss;
+    oss << basic_path << std::setw(6) << std::setfill('0') << file_id << ".data";
+    return oss.str();
+
+}
+
+int templatedb::DB::generate_id(){
+    return unique_file_id++;
 }
 
 void templatedb::DB::set_flush(int num){

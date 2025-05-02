@@ -46,7 +46,14 @@ SSTable::SSTable(const std::string &filePath)
     std::getline(infile, line); key_index_offset = std::stoull(line);
 
     is_range_delete = (tombs_size > 0);
+}
+
+void SSTable::load_key_offset()
+{
+    if (read_offset) return;
+    infile.clear();
     infile.seekg(key_index_offset);
+    std::string line;
     while (std::getline(infile, line)) {
         std::istringstream ss(line);
         int key;
@@ -55,6 +62,7 @@ SSTable::SSTable(const std::string &filePath)
         std::streampos offset = static_cast<std::streampos>(raw_offset);
         key_offsets.push_back({key, offset});
     }
+
 }
 
 bool SSTable::save(const std::string& filePath)
@@ -140,6 +148,9 @@ std::optional<templatedb::Value> SSTable::get(int key)
         return std::nullopt;
     }
     // binary search
+    if (!read_offset){
+        load_key_offset();
+    }
     int left = 0, right = key_offsets.size() - 1;
     int found_idx = -1;
 
@@ -375,6 +386,9 @@ std::optional<templatedb::Entry> SSTable::next()
 
 void SSTable::reset_iterator()
 {
+    if (!read_offset){
+        load_key_offset();
+    }
     iter_index = 0;
 }
 

@@ -62,7 +62,7 @@ private:
     bool write_to_file();
     bool flush_check();
     void compact(int level);
-    std::string path_control(int level, int num);
+    std::string path_control(int file_id);
     int max_level = 0;
     int count = 0;
     int db_size = 0;
@@ -73,7 +73,9 @@ private:
     int level_size_base = 20; // Basic level size
     int level_size_multi = 4;
     const std::string basic_path = "SSTables/SSTable_";
-    void normalize_filenames(int level);
+    int generate_id();
+    // void normalize_filenames(int level);
+    int unique_file_id = 0;
 };
 
 }   // namespace templatedb
