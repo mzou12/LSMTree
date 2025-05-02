@@ -51,6 +51,8 @@ private:
     std::vector<templatedb::Entry> entries;
     std::vector<templatedb::RangeTomb> tombs;
     std::vector<templatedb::Fragment> fragments;
+    void load_key_offset();
+    bool read_offset = false;
     bool is_range_delete = false;
     uint64_t size = 0;
     uint64_t tombs_size = 0;

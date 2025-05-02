@@ -557,6 +557,24 @@ void templatedb::DB::compact(int level) {
         }
     }
 
+    if (overlap_sum == 0){
+        int new_id = sstables_file[level + 1].size();
+        std::rename(path_control(level, oldest_level_num).c_str(), path_control(level + 1, new_id).c_str());
+        sstables_file[level + 1].push_back(new_id);
+        levels_size[level + 1] += cs_size;
+        levels_size[level] -= cs_size;
+        auto& filelist = sstables_file[level];
+        auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
+        if (it != filelist.end()) 
+            filelist.erase(it);
+
+        normalize_filenames(level);
+        if (levels_size[level + 1] >= level_size_base * pow(level_size_multi, level + 1)){
+            compact(level + 1);
+        }
+        return;
+    }
+
     std::vector<Entry> merged_entries;
     std::vector<RangeTomb> all_tombs = cs.getRangeTomb();
     
