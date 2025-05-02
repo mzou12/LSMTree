@@ -51,6 +51,7 @@ SSTable::SSTable(const std::string &filePath)
 void SSTable::load_key_offset()
 {
     if (read_offset) return;
+    read_offset = true;
     infile.clear();
     infile.seekg(key_index_offset);
     std::string line;
