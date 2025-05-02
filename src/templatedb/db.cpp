@@ -489,6 +489,7 @@ void templatedb::DB::compact(int level) {
         SSTable new_sst(path);
         min = std::min(new_sst.get_min(), min);
         max = std::max(new_sst.get_max(), max);
+        new_seq_start = std::min(new_seq_start, new_sst.get_seq_start());
         for (const auto& e: new_sst.getEntries()){
             // std::cout << "insert " << e.key << "\n";
             entries.push_back(e);
