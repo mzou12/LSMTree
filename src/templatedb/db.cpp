@@ -490,7 +490,6 @@ void templatedb::DB::compact(int level) {
 
     // Hit max_level, need open a new level, so it is oldest data, do point delete and range delte cleaning
     if (level >= max_level){
-        std::cout << "hit max level" <<"\n";
         cs.reset_iterator();
         std::vector<RangeTomb> all_tombs = cs.getRangeTomb();
         std::vector<Entry> merged_entries;
