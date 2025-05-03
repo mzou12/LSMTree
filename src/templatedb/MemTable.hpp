@@ -8,6 +8,7 @@
 
 #include "struct.hpp"
 #include "BloomFilter.h"
+#include "SkipList.hpp"
 
 class MemTable
 {
@@ -16,10 +17,10 @@ public:
     uint64_t seq_start = -1;
     int min = 0, max;
     MemTable();
-    MemTable(const std::vector<templatedb::Entry>& entries,
-        const std::vector<templatedb::RangeTomb>& tombs,
-        int min, int max,
-        uint64_t size, uint64_t seq_start);
+    // MemTable(const std::vector<templatedb::Entry>& entries,
+    //     const std::vector<templatedb::RangeTomb>& tombs,
+    //     int min, int max,
+    //     uint64_t size, uint64_t seq_start);
     bool flush(const std::string& filePath);
     bool save(const std::string& filePath);
 
@@ -42,13 +43,11 @@ public:
     void reset_range_iterator();
 
 private:
-    std::vector<templatedb::Entry> entries;
+    SkipList<int, templatedb::Entry> entries;
     std::vector<templatedb::RangeTomb> tombs;
-    std::vector<templatedb::Entry> sorted_entries;
-    std::vector<templatedb::RangeTomb> sorted_tombs;
-    int iter_index = 0;
+    SkipList<int, templatedb::Entry>::Iterator entry_iter;
+    std::vector<templatedb::RangeTomb>::iterator rt_iter;
     int range_iter_index = 0;
-    bool sorted = false;
     bool range_sorted = false;
     
 };
