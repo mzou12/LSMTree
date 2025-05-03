@@ -11,11 +11,11 @@ int main() {
     std::filesystem::create_directory("SSTables");
 
     DB db;
-    db.set_flush(5);             // flush 每 3 条
-    db.set_level_size(10);        // compaction 每层 6 条
-    db.set_level_size_multi(2);  // 下一层翻倍大小
+    db.set_flush(5); 
+    db.set_level_size(10);
+    db.set_level_size_multi(2);
 
-    // 插入 10 条数据，会触发多轮 flush + compact
+    // multi flush + compact
     std::cout << "start flush and compact"<<"\n";
     for (int i = 0; i < 13; ++i) {
         db.put(i, Value({i, i}));
