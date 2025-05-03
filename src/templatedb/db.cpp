@@ -518,9 +518,9 @@ void templatedb::DB::compact(int level) {
             // normalize_filenames(level);
             return;
         }
-        MemTable mmt(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
+        MemTable new_mmt(merged_entries, all_tombs, min, max, merged_entries.size(), start_seq);
         int new_id = generate_id();
-        mmt.save(path_control(new_id));
+        new_mmt.save(path_control(new_id));
 
         auto& filelist = sstables_file[level];
         auto it = std::find(filelist.begin(), filelist.end(), oldest_level_num);
