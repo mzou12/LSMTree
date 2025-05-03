@@ -23,6 +23,24 @@ SSTable::SSTable(const std::vector<templatedb::Entry> &new_entries, const std::v
 
 }
 
+void SSTable::load_key_offset()
+ {
+     if (read_offset) return;
+     read_offset = true;
+     infile.clear();
+     infile.seekg(key_index_offset);
+     std::string line;
+     while (std::getline(infile, line)) {
+         std::istringstream ss(line);
+         int key;
+         uint64_t raw_offset;
+         ss >> key >> raw_offset;
+         std::streampos offset = static_cast<std::streampos>(raw_offset);
+         key_offsets.push_back({key, offset});
+     }
+ 
+ }
+
 
 static std::vector<templatedb::Fragment> build_fragments(const std::vector<templatedb::RangeTomb>& tombs);
 
@@ -46,15 +64,6 @@ SSTable::SSTable(const std::string &filePath)
     std::getline(infile, line); key_index_offset = std::stoull(line);
 
     is_range_delete = (tombs_size > 0);
-    infile.seekg(key_index_offset);
-    while (std::getline(infile, line)) {
-        std::istringstream ss(line);
-        int key;
-        uint64_t raw_offset;
-        ss >> key >> raw_offset;
-        std::streampos offset = static_cast<std::streampos>(raw_offset);
-        key_offsets.push_back({key, offset});
-    }
 }
 
 bool SSTable::save(const std::string& filePath)
@@ -138,6 +147,10 @@ std::optional<templatedb::Value> SSTable::get(int key)
 {
     if (key > max || key < min){
         return std::nullopt;
+    }
+
+    if (!read_offset){
+        load_key_offset();
     }
     // binary search
     int left = 0, right = key_offsets.size() - 1;

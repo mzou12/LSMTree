@@ -52,6 +52,7 @@ private:
     std::vector<templatedb::RangeTomb> tombs;
     std::vector<templatedb::Fragment> fragments;
     bool is_range_delete = false;
+    bool read_offset = false;
     uint64_t size = 0;
     uint64_t tombs_size = 0;
     uint64_t seq_start = 0;
@@ -66,5 +67,6 @@ private:
     std::streamoff key_index_offset;
     std::vector<std::pair<int, std::streampos>> key_offsets;
     void load_tombs();
+    void load_key_offset();
     void load_entries();
 };
