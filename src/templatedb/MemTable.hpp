@@ -27,11 +27,11 @@ public:
     void add(int key, const templatedb::Value& val, uint64_t seq);
     void point_delete(int key, uint64_t seq);
     void range_delete(int min, int max, uint64_t seq);
-    const std::vector<templatedb::Entry>& getEntries() const;
-    const std::vector<templatedb::RangeTomb>& getRangeTomb() const;
+    // const std::vector<templatedb::Entry>& getEntries() const;
+    // const std::vector<templatedb::RangeTomb>& getRangeTomb() const;
     bool hasRangeDelete();
 
-    void sort_entries();
+    // void sort_entries();
     void sort_tombs();
     void clear();
     std::optional<templatedb::Entry> next();
