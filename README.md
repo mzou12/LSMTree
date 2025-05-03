@@ -1,97 +1,100 @@
-# CS 561: Data Systems Architecture - TemplateDB
+# CS 561: Implementation LSM-Tree Key-Value Store with Different Compaction Strategies
 
 
 ## About
 
-TemplateDB is a simple template for you, the student, to use for the systems
-implementation project in CS 561. Note that this is a simple template, it is
-not extensive, rather it is meant to help guide you on what we expect when
-you implement the LSM tree. You can use this as base code or start from
-scratch.
+This project implements a high-performance **Log-Structured Merge-Tree (LSM-tree)** key-value store in C++. It supports:
+
+- **Leveling and Tiering Compaction**(In separate branch)
+- **Point and Range Deletion (Tombstone-based)**
+- **Bloom Filters for fast GET** (In separate branch)
+- **Optional Skiplist-based MemTable**(In separate branch)
+- **Basic benchmarking suite**
 
 
-## Requirements
+## Features
 
-You will need the following on your system (or alternatively develop on the
-CSA machines)
+### Compaction Strategies
+- **Leveling**: Merge overlapping files between levels.
+- **Tiering**: No merging; accumulate files.
 
-    1. CMake
-    2. C++ Compiler
-    3. GoogleTest (Auto compiled and fetched with CMake)
+### Deletes
+- **Point Delete**: Marks a single key as deleted then put it in to the entry list.
+- **Range Delete**: Insert a range in to range tombs list.
 
+### Optimization
+- **Bloom Filters**: Avoid unnecessary disk reads on negative GETs.
+- **Skiplist MemTable**: Boost PUT and GET performance in memory (Before flush).
+- **Lazy Startt** Only read Header to determine read is necussary or not
 
+### SCAN Support
+- Full scan or `SCAN(min, max)` with deduplication and tombstone filtering.
 
-## Usage
+## Structure
 
-To compile, first create a build directory.
+```
+  project/
+  |-- src/templatedb/
+  │ |-- data/ .wl # workload file, store in the data folder
+  │ |-- db.* # Core logic (put, get, scan, compaction)
+  │ |-- MemTable.* # Memory, In-memory structure (array/skiplist), handle insert, delete
+  │ |-- SSTable.* # SSTable On-disk table read
+  │ |-- struct.hpp # Struct use in LSM tree, include Entry, RangeTomb, Value struct
+  │ |-- BloomFilter.* # Bloom filter utility
+  │ |-- murmurhash.* # Implementation of a MurmurHash hash for Bloom filter
+  │ |-- operation.* # Read the workload file and allow users to input through the file
+  │ |-- SkipList.hpp # Key-value type SkipList
+  │ |-- experience.cpp # use for experience
+  │ |-- Makefile # Help compile experience class
+  |-- tools/ # Python workload generator
+  │ |-- gen_workload.py # generate mixed workload
+  │ |-- gen_sequential_insert.py # generate sequential insert
+  │ |--
+  |-- README.md
+```
 
+## Getting Start
+### Requirements
+- C++17 compiler (e.g. g++)
+- Python3 for workload generation
+- GNU Make
+
+### Compile
+
+Generate workload:
+
+in tools folder, use:
 
 ```bash
-mkdir build
-cd build
+cd tools
+python3 gen_workload.py <num_ops> <type> <output_path> # e.g. python3 gen_workload.py 50000 mixed ./out/mixed.workload
+
+cd src/templatedb
+make
 ```
 
-Afterwards, build using cmake.
+## Key Design Choice
 
+- Point and range tombstones are retained and filtered during both query and compaction.
 
-```bash
-cmake ..
-cmake --build .
-```
+- Fragment-based range deletion modeled after RocksDB.
 
-An example executable should be located in the `build/example` folder. The
-benchmark simply takes in two files, a data file and a workload file and
-measures the time it takes to execute the workload over the dataset. Use the
-`-h` flag to see the proper syntax.
+- Multi-way heap merge used for compaction & scan.
 
-Additionally we have provided some examples of unit test in C++ using gtest.
-This source is located in the `tests/basic_test.cpp`, whith the executable
-will be located in `build/tests` directory. We highly recommend when building
-your system to continue to expand on unit test. If you want to run all test,
-you may use the following command while you are in the build directory.
+- Bloom Filters persisted and lazily loaded from SSTable.
 
-```bash
-ctest
-```
+## Configuration
 
-Both the basic test and persistence test will go through.
+- User can set LSM tree by using db's set_flush, set_level_size, set_level_size_multi method
+to set LSM tree's flush trigger, compaction trigger, level size increasement
 
+- All SSTables saved under SSTables/.
 
-## Building Workloads and Datasets
+## References
 
-In the `tools` folder we have included two scripts `gen_data.py` and
-`gen_workload.py`. They generate random datasets and workloads respectively.
-By default they have a maximum range of values that can be randomly
-generated, I assume everyone knows some python and can edit the scripts to
-increase the range if needed. Generate workloads and data with the following
-syntax
-
-```bash
-gen_data.py <rows> <dim_per_value> <folder>
-gen_workload.py <rows> <dim_per_value> <max_key> <folder>
-```
-
-Data is generated with a space separating each item.
-First line indicates 
-
-```
-Number of Keys  Dimensions of each Object
-```
-
-Rest of lines follows the format of
-```
-OPERATOR KEY VALUE
-```
-
-While workloads follow the format of 
-
-```
-OPERATOR KEY ARGS
-```
-
-with the first line being the number of total operations.
+- [Rocksdb](https://github.com/facebook/rocksdb)
+- Luo, C., & Carey, M. J. (2020). LSM-based storage techniques: a survey. The VLDB Journal, 29(1), 393-418.
+- [BU CS561 templatedb](https://github.com/BU-DiSC/cs561_templatedb)
 
 ## Contact
-
-If you have any questions please feel free to see Ju Hyoung in office hours, or
-email me at jmun@bu.edu.
+If you have any questions please feel free to email to Minghong Zou zmh1225@bu.edu
