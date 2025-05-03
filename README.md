@@ -47,10 +47,12 @@ This project implements a high-performance **Log-Structured Merge-Tree (LSM-tree
   │ |-- experience.cpp # use for experience
   │ |-- Makefile # Help compile experience class
   |-- tools/ # Python workload generator
+  | |-- out/ default out folder
   │ |-- gen_workload.py # generate mixed workload
   │ |-- gen_sequential_insert.py # generate sequential insert
   │ |--
-  |-- README.md
+  |-- format.txt # SStable files written to the disk
+  |-- README.md # You are in here
 ```
 
 ## Getting Start
