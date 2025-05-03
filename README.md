@@ -3,7 +3,7 @@
 
 ## About
 
-This project implements a high-performance **Log-Structured Merge-Tree (LSM-tree)** key-value store in C++. It supports:
+This project implements a **Log-Structured Merge-Tree (LSM-tree)** key-value store in C++. It supports:
 
 - **Leveling and Tiering Compaction**(In separate branch)
 - **Point and Range Deletion (Tombstone-based)**
