@@ -54,6 +54,7 @@ private:
     bool is_range_delete = false;
     bool key_offset_generate = false;
     bool use_bloom = false;
+    bool bloom_loaded = false;
     uint64_t size = 0;
     uint64_t tombs_size = 0;
     uint64_t seq_start = 0;
@@ -66,8 +67,12 @@ private:
     std::streampos entry_offset;
     std::streampos tomb_offset;
     std::streamoff key_index_offset;
+    streamoff bloom_filter_offset;
+    int bits_per_elements = 10;
+    int num_elements = 0;
     std::vector<std::pair<int, std::streampos>> key_offsets;
     BF::BloomFilter bloom_filter;
     void load_tombs();
+    void load_bloom();
     void load_entries();
 };

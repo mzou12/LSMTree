@@ -25,6 +25,9 @@ SSTable::SSTable(const std::vector<templatedb::Entry> &new_entries, const std::v
 static std::vector<templatedb::Fragment> build_fragments(const std::vector<templatedb::RangeTomb>& tombs);
 
 void SSTable::load_key_offset(){
+    if (!key_offsets.empty()){
+        return;
+    }
     std::string line;
     infile.clear();
     infile.seekg(key_index_offset);
@@ -35,6 +38,20 @@ void SSTable::load_key_offset(){
         ss >> key >> raw_offset;
         std::streampos offset = static_cast<std::streampos>(raw_offset);
         key_offsets.push_back({key, offset});
+    }
+}
+
+void SSTable::load_bloom(){
+    if (!use_bloom || bloom_loaded){
+        return;
+    }
+    bloom_loaded = true;
+    std::string line;
+    bloom_filter = BF::BloomFilter(num_elements, bits_per_elements);
+    infile.seekg(bloom_filter_offset);
+    std::getline(infile, line);
+    for (int i = 0; i < line.size(); i++){
+        bloom_filter.bf_vec[i] = (line[i] == '1');
     }
 }
 
@@ -53,22 +70,14 @@ SSTable::SSTable(const std::string &filePath)
     std::getline(infile, line); min = std::stoi(line);
     std::getline(infile, line); max = std::stoi(line);
     std::getline(infile, line); seq_start = std::stoull(line);
-    std::getline(infile, line); int bits_per_elements = std::stoull(line);
+    std::getline(infile, line); bits_per_elements = std::stoull(line);
     std::getline(infile, line); entry_offset = std::stoull(line);
     std::getline(infile, line); tomb_offset = std::stoull(line);
     std::getline(infile, line); key_index_offset = std::stoull(line);
-    std::getline(infile, line); int num_elements = std::stoull(line);
-    std::getline(infile, line); streamoff bloom_filter_offset = std::stoull(line);
+    std::getline(infile, line); num_elements = std::stoull(line);
+    std::getline(infile, line); bloom_filter_offset = std::stoull(line);
 
-    if (num_elements > 0){
-        use_bloom = true;
-        bloom_filter = BF::BloomFilter(num_elements, bits_per_elements);
-        infile.seekg(bloom_filter_offset);
-        std::getline(infile, line);
-        for (int i = 0; i < line.size(); i++){
-            bloom_filter.bf_vec[i] = (line[i] == '1');
-        }
-    }
+    use_bloom = (num_elements > 0);
     
     is_range_delete = (tombs_size > 0);
 }
@@ -173,8 +182,11 @@ std::optional<templatedb::Value> SSTable::get(int key)
         return std::nullopt;
     }
 
-    if (use_bloom && !bloom_filter.query(std::to_string(key))){
-        return std::nullopt;
+    if (use_bloom){
+        load_bloom();
+        if (!bloom_filter.query(std::to_string(key))){
+            return std::nullopt;
+        }
     }
 
     if (!key_offset_generate){
