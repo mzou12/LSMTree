@@ -25,7 +25,7 @@ MemTable::MemTable()
 
 bool MemTable::flush(const std::string &filePath)
 {
-    sort_entries();
+    // sort_entries();
     sort_tombs();
     return save(filePath);
 }
@@ -158,14 +158,14 @@ bool MemTable::hasRangeDelete()
     return !tombs.empty();
 }
 
-static bool entry_cmp(const templatedb::Entry& a, const templatedb::Entry& b) {
-    if (a.key != b.key) return a.key < b.key;          // key increase
-    return a.seq > b.seq;                              // seq decrease
-}
+// static bool entry_cmp(const templatedb::Entry& a, const templatedb::Entry& b) {
+//     if (a.key != b.key) return a.key < b.key;          // key increase
+//     return a.seq > b.seq;                              // seq decrease
+// }
 
-void MemTable::sort_entries() {
-    std::sort(entries.begin(), entries.end(), entry_cmp);
-}
+// void MemTable::sort_entries() {
+//     std::sort(entries.begin(), entries.end(), entry_cmp);
+// }
 
 
 static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
@@ -218,4 +218,5 @@ void MemTable::reset_range_iterator(){
         sort_tombs();
         range_sorted = true;
     }
+}
     
