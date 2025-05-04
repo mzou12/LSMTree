@@ -52,7 +52,13 @@ Master branch is using tiering strategy, and we also implemented multiple compac
   | |-- out/ default out folder
   │ |-- gen_workload.py # generate mixed workload
   │ |-- gen_sequential_insert.py # generate sequential insert
-  │ |--
+  │ |-- gen_GET.py #generate GET workload
+  │ |-- gen_SCAN.py #generate SCAN workload
+  │ |-- gen_sequentialPUT.py #generate sequential PUT 
+  │ |-- gen_randomPUT.py #generate random PUT
+  │ |-- gen_pointdelete.py #generate point delete workload
+  │ |-- gen_rangedelete.py #generate range delete workload
+  │ |-- gen_mixed_workload.py #generate mixed workload
   |-- format.txt # SStable files written to the disk
   |-- README.md # You are in here
 ```
@@ -71,10 +77,46 @@ in tools folder, use:
 
 ```bash
 cd tools
-python3 gen_workload.py <num_ops> <type> <output_path> # e.g. python3 gen_workload.py 50000 mixed ./out/mixed.workload
+#Generate mixed workload
+python3 gen_workload.py <num_ops> <type> <output_path> # e.g. python3 gen_workload.py 50000 mixed ./data
 
-cd src/templatedb
+or
+# Generate get operation
+python3 gen_GET.py <num_ops> <key_max> <output_folder> #e.g. python3 gen_GET.py 10000 100000 /data
+
+or
+# Generate scan operation
+python3 gen_SCAN.py <num_ops> <scan_range> <key_max> <output_folder> #e.g. python3 gen_SCAN.py 1000 10 100000 /data
+
+or
+# Generate sequential put operation
+python3 gen_sequentialPUT.py <num_ops> <dims> <key_max> <output_folder>  #e.g. python3 gen_sequentialPUT.py 100000 2 100000 /data
+
+or
+# Generate random put operattion
+python3 gen_randomPUT.py <num_ops> <dims> <key_max> <output_folder> #e.g. python3 gen_randomPUT.py 100000 2 100000 /data
+
+or
+# Generate Point delete operation
+python3 gen_pointdelete.py <num_ops> <key_max> <output_folder> #e.g. python3 gen_pointdelete.py 1000 100000 /data
+
+or
+# Generate Rondom delete opertion workload
+python3 gen_rangedelete.py <num_ops> <key_max> <range_size> <output_folder> #e.g. python3 gen_rangedelete.py 1000 100000 10 /data
+
+or
+# Generate mixed operation workload
+python3 gen_mixed_workload.py <total_ops> <put_ratio> <get_ratio> <point_del_ratio> <range_del_ratio> <scan_ratio> <key_max> <range_len> <output_folder> #e.g. gen_mixed_workload.py 10000 0.5 0.2 0.1 0.1 0.1 100000 10 /data
+
+mv [file you generate] [../src/templatedb/data]
+
+cd ../src/templatedb
+
+# Change operation file name in the experience.cpp
+
 make
+
+./run_experience
 ```
 
 ## Key Design Choice
