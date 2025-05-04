@@ -81,23 +81,23 @@ cd tools
 python3 gen_workload.py <num_ops> <type> <output_path> # e.g. python3 gen_workload.py 50000 mixed ./data
 
 or
-# Generate get operation
+# Generate get operation workload
 python3 gen_GET.py <num_ops> <key_max> <output_folder> #e.g. python3 gen_GET.py 10000 100000 /data
 
 or
-# Generate scan operation
+# Generate scan operation workload
 python3 gen_SCAN.py <num_ops> <scan_range> <key_max> <output_folder> #e.g. python3 gen_SCAN.py 1000 10 100000 /data
 
 or
-# Generate sequential put operation
+# Generate sequential put operation workload
 python3 gen_sequentialPUT.py <num_ops> <dims> <key_max> <output_folder>  #e.g. python3 gen_sequentialPUT.py 100000 2 100000 /data
 
 or
-# Generate random put operattion
+# Generate random put operattion workload
 python3 gen_randomPUT.py <num_ops> <dims> <key_max> <output_folder> #e.g. python3 gen_randomPUT.py 100000 2 100000 /data
 
 or
-# Generate Point delete operation
+# Generate Point delete operation workload
 python3 gen_pointdelete.py <num_ops> <key_max> <output_folder> #e.g. python3 gen_pointdelete.py 1000 100000 /data
 
 or
