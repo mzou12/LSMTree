@@ -9,7 +9,7 @@ This project implements a **Log-Structured Merge-Tree (LSM-tree)** key-value sto
 - **Point and Range Deletion (Tombstone-based)**
 - **Bloom Filters for fast GET** (In separate branch)
 - **Optional Skiplist-based MemTable**(In separate branch)
-- **Basic benchmarking suite**(In src/templatedb)
+- **Basic benchmarking suite**(In src/templatedb/experience.cpp)
 
 Master branch is using tiering strategy, and we also implemented multiple compaction strategy in multiple branches
 
@@ -46,7 +46,7 @@ Master branch is using tiering strategy, and we also implemented multiple compac
   │ |-- murmurhash.* # Implementation of a MurmurHash hash for Bloom filter
   │ |-- operation.* # Read the workload file and allow users to input through the file
   │ |-- SkipList.hpp # Key-value type SkipList
-  │ |-- experience.cpp # use for experience
+  │ |-- experience.cpp # use for experiment
   │ |-- Makefile # Help compile experience class
   |-- tools/ # Python workload generator
   | |-- out/ default out folder
