@@ -23,6 +23,24 @@ SSTable::SSTable(const std::vector<templatedb::Entry> &new_entries, const std::v
 
 }
 
+void SSTable::load_key_offset()
+{
+    if (read_offset) return;
+    read_offset = true;
+    infile.clear();
+    infile.seekg(key_index_offset);
+    std::string line;
+    while (std::getline(infile, line)) {
+        std::istringstream ss(line);
+        int key;
+        uint64_t raw_offset;
+        ss >> key >> raw_offset;
+        std::streampos offset = static_cast<std::streampos>(raw_offset);
+        key_offsets.push_back({key, offset});
+    }
+
+}
+
 
 static std::vector<templatedb::Fragment> build_fragments(const std::vector<templatedb::RangeTomb>& tombs);
 
@@ -62,7 +80,7 @@ bool SSTable::save(const std::string& filePath)
     std::ofstream file(filePath, std::ios::binary | std::ios::trunc);
     if (!file.is_open()) return false;
 
-    // Step 1: 写 header 占位（offset 行只写换行）
+    // Step 1: header
     file << size << "\n";
     file << tombs.size() << "\n";
     file << min << "\n";
@@ -71,7 +89,7 @@ bool SSTable::save(const std::string& filePath)
 
     std::streampos offset_pos = file.tellp();
 
-    // 写 3 行固定长度（10字符+换行），填空格，防止残留（关键）
+    // entry offset, tomb offset, key index offset
     for (int i = 0; i < 3; ++i) {
         file << "          \n";  // 10 spaces + \n
     }
@@ -104,7 +122,7 @@ bool SSTable::save(const std::string& filePath)
         file << key << " " << static_cast<uint64_t>(pos) << "\n";
     }
 
-    // Step 5: 回写 header offset 部分（覆盖写，每行最多写 10 字符 + \n）
+    // write back to the offset
     file.seekp(offset_pos);
     file << std::setw(10) << std::left << entry_offset << "\n"
          << std::setw(10) << std::left << tomb_offset << "\n"
@@ -139,7 +157,10 @@ std::optional<templatedb::Value> SSTable::get(int key)
     if (key > max || key < min){
         return std::nullopt;
     }
-    // 二分查找第一个 key 匹配的 entry 起点
+    // binary search
+    if (!read_offset){
+        load_key_offset();
+    }
     int left = 0, right = key_offsets.size() - 1;
     int found_idx = -1;
 
@@ -259,7 +280,7 @@ bool SSTable::hasRangeDelete()
 }
 
 static std::vector<templatedb::Fragment> build_fragments(const std::vector<templatedb::RangeTomb>& tombs) {
-    // 1. 收集所有边界
+    // collect bonds
     std::set<int> bounds;
     for (const auto& t : tombs) {
         bounds.insert(t.start);
@@ -296,30 +317,30 @@ bool SSTable::is_key_covered_by_fragment(int key, uint64_t key_seq) {
         const templatedb::Fragment& frag = fragments[mid];
 
         if (key < frag.start) {
-            right = mid - 1;  // key 在当前段左边
+            right = mid - 1;  // key in the left
         } else if (key >= frag.end) {
-            left = mid + 1;   // key 在当前段右边
+            left = mid + 1;   // key in the right
         } else {
-            // key ∈ [frag.start, frag.end)
+            // key [frag.start, frag.end)
             return frag.max_seq > key_seq;
         }
     }
 
-    return false; // 没有命中任何 fragment
+    return false; // no hit
 }
 
 static bool entry_cmp(const templatedb::Entry& a, const templatedb::Entry& b) {
-    if (a.key != b.key) return a.key < b.key;          // key 升序
-    return a.seq > b.seq;                              // seq 降序（新版本在前）
+    if (a.key != b.key) return a.key < b.key;
+    return a.seq > b.seq;
 }
 
 void SSTable::sort_entries() {
-    std::sort(entries.begin(), entries.end(), entry_cmp); // 如果你用 std::vector
+    std::sort(entries.begin(), entries.end(), entry_cmp); 
 }
 
 static bool tomb_cmp(const templatedb::RangeTomb& a, const templatedb::RangeTomb& b) {
-    if (a.start != b.start) return a.start < b.start; // start 升序
-    return a.seq > b.seq; // 相同 start 的，先处理更新的 tombstone
+    if (a.start != b.start) return a.start < b.start; 
+    return a.seq > b.seq; 
 }
 
 void SSTable::sort_tombs(){
