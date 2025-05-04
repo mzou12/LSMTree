@@ -9,7 +9,9 @@ This project implements a **Log-Structured Merge-Tree (LSM-tree)** key-value sto
 - **Point and Range Deletion (Tombstone-based)**
 - **Bloom Filters for fast GET** (In separate branch)
 - **Optional Skiplist-based MemTable**(In separate branch)
-- **Basic benchmarking suite**
+- **Basic benchmarking suite**(In src/templatedb)
+
+Master branch is using tiering strategy, and we also implemented multiple compaction strategy in multiple branches
 
 
 ## Features
